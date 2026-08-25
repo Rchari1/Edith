@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>SecondBrain</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <header class="brand">
+          <div class="brand-dot"></div>
+          <h1>SecondBrain</h1>
+        </header>
+
+        <div class="search-wrap">
+          <input id="search" type="search" placeholder="Search the brain" autocomplete="off" />
+        </div>
+
+        <nav class="note-list" id="note-list"></nav>
+
+        <div class="status" id="status">
+          <div class="status-row"><span class="k">Server</span><span class="v" id="s-server">starting</span></div>
+          <div class="status-row"><span class="k">Notes</span><span class="v" id="s-notes">0</span></div>
+          <div class="status-row"><span class="k">Claude</span><span class="v" id="s-reg">checking</span></div>
+          <div class="status-row"><span class="k">Queue</span><span class="v" id="s-queue">idle</span></div>
+          <div class="actions">
+            <button id="btn-backfill" title="Ingest sessions already on disk">Backfill</button>
+            <button id="btn-vault" title="Open the vault folder">Vault</button>
+            <button id="btn-settings" title="Settings">Settings</button>
+          </div>
+        </div>
+      </aside>
+
+      <main id="stage">
+        <canvas id="graph"></canvas>
+        <div id="empty" class="empty hidden">
+          <h2>The brain is empty</h2>
+          <p>Run <strong>Backfill</strong> to distill the Claude sessions already on this machine, or just keep working &mdash; new sessions are ingested automatically.</p>
+        </div>
+        <div id="legend" class="legend">
+          <span><i class="dot considered"></i>considered</span>
+          <span><i class="dot opened"></i>opened</span>
+          <span><i class="dot saved"></i>saved</span>
+          <span><i class="dot claude"></i>by Claude</span>
+        </div>
+        <div id="tooltip" class="tooltip hidden"></div>
+      </main>
+
+      <section id="detail" class="detail hidden">
+        <button class="close" id="detail-close" aria-label="Close">&times;</button>
+        <h2 id="detail-title"></h2>
+        <div class="detail-meta" id="detail-meta"></div>
+        <div class="detail-body" id="detail-body"></div>
+        <div class="detail-actions">
+          <button id="btn-open-file">Open .md</button>
+          <button id="btn-delete" class="danger">Delete</button>
+        </div>
+      </section>
+
+      <section id="settings" class="modal hidden">
+        <div class="modal-card">
+          <h2>Settings</h2>
+          <label>Anthropic API key
+            <input id="set-key" type="password" placeholder="sk-ant-..." />
+            <small>Used only to distill sessions into notes. Stored locally. Falls back to <code>ANTHROPIC_API_KEY</code>.</small>
+          </label>
+          <label>Model <input id="set-model" type="text" /></label>
+          <label>Minimum turns to distill <input id="set-minturns" type="number" min="1" max="50" /></label>
+          <label class="row"><input id="set-auto" type="checkbox" /> Distill new sessions automatically</label>
+          <div class="modal-actions">
+            <button id="set-cancel">Cancel</button>
+            <button id="set-save" class="primary">Save</button>
+          </div>
+        </div>
+      </section>
+
+      <footer id="activity"><div id="activity-inner"></div></footer>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
