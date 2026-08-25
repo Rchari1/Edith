@@ -1,0 +1,151 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
+import fs from 'node:fs';
+import { Vault } from '@core/vault/vault.js';
+import { SqliteSearchProvider } from '@core/vault/search.js';
+import { serializeNote, parseNote, slugify } from '@core/vault/note.js';
+import { tmpDir, rm } from './helpers.js';
+
+describe('slugify', () => {
+  it('produces stable kebab ids', () => {
+    expect(slugify('SQLite FTS5 Ranking!')).toBe('sqlite-fts5-ranking');
+    expect(slugify('  --weird__input--  ')).toBe('weird-input');
+    expect(slugify('')).toBe('untitled');
+  });
+});
+
+describe('note serialization', () => {
+  it('round-trips through disk format', () => {
+    const note = {
+      frontmatter: {
+        id: 'a-note',
+        title: "Claude's: tricky title",
+        type: 'concept' as const,
+        created: '2026-08-25',
+        updated: '2026-08-25',
+        sources: [{ session: 's1', project: 'p1', at: '2026-08-25T10:00:00Z' }],
+        links: ['other-note'],
+        origin: 'distilled' as const,
+        tags: ['testing']
+      },
+      body: 'Body text.',
+      path: '/tmp/a-note.md'
+    };
+    const round = parseNote(serializeNote(note), note.path, 'a-note');
+    expect(round.frontmatter).toEqual(note.frontmatter);
+    expect(round.body).toBe('Body text.');
+  });
+
+  it('tolerates hand-edited frontmatter with wrong types', () => {
+    const raw = `---\nid: x\ntitle: 123\nlinks: "not-a-list"\nsources: garbage\n---\nbody`;
+    const n = parseNote(raw, '/tmp/x.md', 'x');
+    expect(n.frontmatter.links).toEqual([]);
+    expect(n.frontmatter.sources).toEqual([]);
+    expect(n.frontmatter.origin).toBe('human');
+  });
+});
+
+describe('Vault', () => {
+  let dir: string;
+  let vault: Vault;
+
+  beforeEach(async () => {
+    dir = tmpDir();
+    vault = new Vault(dir, new SqliteSearchProvider(path.join(dir, 'index.db')));
+    await vault.init();
+  });
+
+  afterEach(() => {
+    vault.close();
+    rm(dir);
+  });
+
+  it('writes a note to disk and finds it by search', async () => {
+    await vault.upsert({ title: 'SQLite FTS Ranking', body: 'Use bm25 with column weights.' });
+    expect(fs.existsSync(path.join(dir, 'notes', 'sqlite-fts-ranking.md'))).toBe(true);
+
+    const hits = await vault.search('bm25');
+    expect(hits.map((h) => h.id)).toContain('sqlite-fts-ranking');
+  });
+
+  it('merges bodies instead of clobbering on re-upsert', async () => {
+    await vault.upsert({ id: 'topic', title: 'Topic', body: 'First insight.' });
+    await vault.upsert({ id: 'topic', title: 'Topic', body: 'Second insight.' });
+    const note = vault.get('topic')!;
+    expect(note.body).toContain('First insight.');
+    expect(note.body).toContain('Second insight.');
+  });
+
+  it('does not duplicate an identical body', async () => {
+    await vault.upsert({ id: 'topic', title: 'Topic', body: 'Same.' });
+    await vault.upsert({ id: 'topic', title: 'Topic', body: 'Same.' });
+    expect(vault.get('topic')!.body).toBe('Same.');
+  });
+
+  it('accumulates provenance across sessions without duplicates', async () => {
+    const s1 = { session: 's1', project: 'p', at: '2026-01-01' };
+    const s2 = { session: 's2', project: 'p', at: '2026-01-02' };
+    await vault.upsert({ id: 't', title: 'T', body: 'a', source: s1 });
+    await vault.upsert({ id: 't', title: 'T', body: 'b', source: s2 });
+    await vault.upsert({ id: 't', title: 'T', body: 'c', source: s1 });
+    expect(vault.get('t')!.frontmatter.sources).toHaveLength(2);
+    expect(vault.hasSession('s2')).toBe(true);
+    expect(vault.hasSession('nope')).toBe(false);
+  });
+
+  it('never links a note to itself', async () => {
+    await vault.upsert({ id: 'self', title: 'Self', body: 'x', links: ['self', 'other'] });
+    expect(vault.get('self')!.frontmatter.links).toEqual(['other']);
+  });
+
+  it('builds a graph with ghost nodes for dangling links', async () => {
+    await vault.upsert({ id: 'a', title: 'A', body: 'x', links: ['b', 'ghost'] });
+    await vault.upsert({ id: 'b', title: 'B', body: 'y' });
+
+    const g = vault.graph();
+    const ghost = g.nodes.find((n) => n.id === 'ghost');
+    expect(ghost?.missing).toBe(true);
+    expect(g.nodes.find((n) => n.id === 'a')?.missing).toBe(false);
+    expect(g.edges).toHaveLength(2);
+  });
+
+  it('deduplicates reciprocal edges', async () => {
+    await vault.upsert({ id: 'a', title: 'A', body: 'x', links: ['b'] });
+    await vault.upsert({ id: 'b', title: 'B', body: 'y', links: ['a'] });
+    expect(vault.graph().edges).toHaveLength(1);
+  });
+
+  it('survives a malformed note file on reload', async () => {
+    await vault.upsert({ id: 'good', title: 'Good', body: 'fine' });
+    fs.writeFileSync(path.join(dir, 'notes', 'broken.md'), '---\n: : bad yaml : :\n---\nbody');
+    await vault.reload();
+    expect(vault.get('good')).not.toBeNull();
+  });
+
+  it('rebuilds the index from disk after the db is deleted', async () => {
+    await vault.upsert({ title: 'Durable Thing', body: 'searchable content here' });
+    vault.close();
+
+    fs.rmSync(path.join(dir, 'index.db'), { force: true });
+    const rebuilt = new Vault(dir, new SqliteSearchProvider(path.join(dir, 'index.db')));
+    await rebuilt.init();
+    const hits = await rebuilt.search('searchable');
+    expect(hits.map((h) => h.id)).toContain('durable-thing');
+    rebuilt.close();
+  });
+
+  it('does not throw on FTS-hostile query text', async () => {
+    await vault.upsert({ title: 'Quoting', body: 'content' });
+    for (const q of ['"', 'a OR', 'NEAR(', "it's -- broken", '']) {
+      await expect(vault.search(q)).resolves.toBeInstanceOf(Array);
+    }
+  });
+
+  it('removes a note from disk and index', async () => {
+    await vault.upsert({ id: 'temp', title: 'Temp', body: 'gone soon' });
+    expect(await vault.remove('temp')).toBe(true);
+    expect(vault.get('temp')).toBeNull();
+    expect(await vault.search('gone')).toHaveLength(0);
+    expect(await vault.remove('temp')).toBe(false);
+  });
+});

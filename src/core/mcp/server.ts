@@ -1,0 +1,139 @@
+import express from 'express';
+import type { Server as HttpServer } from 'node:http';
+import net from 'node:net';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { Vault } from '../vault/vault.js';
+import { BrainEventBus } from './events.js';
+import { registerBrainTools } from './tools.js';
+
+export const DEFAULT_PORT = 4319;
+
+export interface BrainServerOptions {
+  port?: number;
+  host?: string;
+}
+
+/** Is this TCP port free to bind? */
+export function isPortFree(port: number, host = '127.0.0.1'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tester = net
+      .createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => tester.close(() => resolve(true)))
+      .listen(port, host);
+  });
+}
+
+/** First free port at or after `start`. Onboarding rewrites configs to whatever we land on. */
+export async function findFreePort(start = DEFAULT_PORT, attempts = 50): Promise<number> {
+  for (let i = 0; i < attempts; i++) {
+    const port = start + i;
+    if (await isPortFree(port)) return port;
+  }
+  throw new Error(`No free port found in range ${start}-${start + attempts}`);
+}
+
+/**
+ * The brain's MCP endpoint, hosted inside the desktop app.
+ *
+ * Runs in stateless mode: each POST gets a fresh McpServer and transport.
+ * That keeps concurrent Claude sessions from colliding on request ids, and
+ * costs nothing because all real state lives in the Vault, not the server.
+ */
+export class BrainServer {
+  readonly bus = new BrainEventBus();
+  private http: HttpServer | null = null;
+  private boundPort: number | null = null;
+
+  constructor(
+    private readonly vault: Vault,
+    private readonly opts: BrainServerOptions = {}
+  ) {}
+
+  get port(): number | null {
+    return this.boundPort;
+  }
+
+  get url(): string | null {
+    return this.boundPort ? `http://127.0.0.1:${this.boundPort}/mcp` : null;
+  }
+
+  async start(): Promise<number> {
+    const host = this.opts.host ?? '127.0.0.1';
+    const port = this.opts.port ?? (await findFreePort());
+
+    const app = express();
+    app.use(express.json({ limit: '8mb' }));
+
+    app.get('/health', (_req, res) => {
+      res.json({ ok: true, notes: this.vault.size(), port: this.boundPort });
+    });
+
+    app.post('/mcp', async (req, res) => {
+      const server = new McpServer({ name: 'secondbrain', version: '0.1.0' });
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+
+      res.on('close', () => {
+        void transport.close();
+        void server.close();
+      });
+
+      try {
+        registerBrainTools(server, this.vault, this.bus);
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+      } catch (err) {
+        this.bus.emitEvent({
+          type: 'status',
+          message: `MCP request failed: ${err instanceof Error ? err.message : String(err)}`,
+          level: 'error',
+          at: Date.now()
+        });
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal server error' },
+            id: null
+          });
+        }
+      }
+    });
+
+    // Stateless mode has no server-initiated stream to resume.
+    const methodNotAllowed = (_req: express.Request, res: express.Response) => {
+      res.status(405).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed. This server is stateless; use POST.' },
+        id: null
+      });
+    };
+    app.get('/mcp', methodNotAllowed);
+    app.delete('/mcp', methodNotAllowed);
+
+    await new Promise<void>((resolve, reject) => {
+      const server = app.listen(port, host, () => {
+        this.http = server;
+        this.boundPort = port;
+        resolve();
+      });
+      server.once('error', reject);
+    });
+
+    this.bus.emitEvent({
+      type: 'status',
+      message: `Brain listening on ${this.url}`,
+      level: 'info',
+      at: Date.now()
+    });
+    return port;
+  }
+
+  async stop(): Promise<void> {
+    const server = this.http;
+    if (!server) return;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    this.http = null;
+    this.boundPort = null;
+  }
+}

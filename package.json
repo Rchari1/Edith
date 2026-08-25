@@ -1,0 +1,54 @@
+{
+  "name": "secondbrain",
+  "version": "0.1.0",
+  "description": "A second brain for Claude \u2014 ingests Claude Code sessions, distills them into linked notes, and lights up as Claude uses them.",
+  "main": "./out/main/index.js",
+  "author": "Raghav Chari",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^5.0.0",
+    "express": "^5.2.1",
+    "gray-matter": "^4.0.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.3.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  },
+  "build": {
+    "appId": "com.rchari.secondbrain",
+    "productName": "SecondBrain",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "directories": {
+      "output": "release"
+    }
+  }
+}
