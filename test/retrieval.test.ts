@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Vault } from '@core/vault/vault.js';
 import { SqliteSearchProvider } from '@core/vault/search.js';
-import { buildPrimer, buildHookPayload, buildAnnouncement } from '@core/context/primer.js';
+import { buildPrimer, buildHookPayload } from '@core/context/primer.js';
 import { registerSessionHook, unregisterSessionHook, HOOK_MARKER } from '@core/onboarding/hooks.js';
 import { RetrievalStats } from '@core/mcp/stats.js';
 import { tmpDir, rm } from './helpers.js';
@@ -65,37 +65,11 @@ describe('session primer', () => {
     expect(p).toContain('and 25 more');
   });
 
-  it('announces itself in a single user-visible line', async () => {
-    expect(buildAnnouncement(vault)).toContain('ready to capture');
-
-    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
-    expect(buildAnnouncement(vault)).toContain('1 memory indexed');
-
-    await vault.upsert({ id: 'b', title: 'B', body: 'y' });
-    const line = buildAnnouncement(vault);
-    expect(line).toContain('EDITH ONLINE');
-    expect(line).toContain('2 memories indexed');
-    expect(line.split('\n')).toHaveLength(1);
-  });
-
-  it('carries no ANSI or markdown, which would render literally', async () => {
-    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
-    const line = buildAnnouncement(vault);
-    // eslint-disable-next-line no-control-regex
-    expect(line).not.toMatch(/\u001b\[/);
-    expect(line).not.toMatch(/[*_`]/);
-  });
-
-  it('sends the primer to the model and the announcement to the user', () => {
-    // additionalContext is model-only; systemMessage is what the user actually
-    // sees. Emitting only the former is why Edith was invisible in-session.
-    const parsed = JSON.parse(buildHookPayload('PRIMER TEXT', 'VISIBLE LINE'));
-    expect(parsed.hookSpecificOutput.additionalContext).toBe('PRIMER TEXT');
-    expect(parsed.systemMessage).toBe('VISIBLE LINE');
-  });
-
-  it('omits systemMessage when there is nothing to announce', () => {
+  it('carries no systemMessage, which SessionStart discards', () => {
+    // The hooks reference lists SessionStart among events where "stdout is
+    // used as context instead" - so a systemMessage here renders nowhere.
     const parsed = JSON.parse(buildHookPayload('PRIMER TEXT'));
+    expect(parsed.hookSpecificOutput.additionalContext).toBe('PRIMER TEXT');
     expect(parsed.systemMessage).toBeUndefined();
   });
 

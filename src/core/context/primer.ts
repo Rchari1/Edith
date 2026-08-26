@@ -70,46 +70,22 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
 }
 
 /**
- * One line announcing Edith, shown to the user in the transcript.
- *
- * Deliberately separate from the primer. `additionalContext` reaches the model
- * only - which is why the primer worked while being completely invisible, and
- * why the app appeared dead in the session even when it was not. This is the
- * visible half.
- *
- * Plain text with unicode only: no ANSI, because this is transcript content
- * rather than terminal output, and no markdown syntax, because if the client
- * renders it literally the asterisks show up as asterisks. Set in the register
- * of a system readout - mark, status, then facts - so it reads as instrument
- * chrome rather than a log line, and stays one line because it prints at the
- * top of every session.
- */
-export function buildAnnouncement(vault: Vault): string {
-  const count = vault.size();
-  const mark = '\u25c8'; // filled diamond - Edith's mark
-  const sep = '\u2009\u00b7\u2009'; // thin space, middot, thin space
-
-  if (count === 0) {
-    return `${mark} EDITH ONLINE${sep}no memories yet${sep}ready to capture`;
-  }
-
-  const noun = count === 1 ? 'memory' : 'memories';
-  return `${mark} EDITH ONLINE${sep}${count} ${noun} indexed${sep}recall ready`;
-}
-
-/**
  * The exact JSON shape a Claude Code SessionStart hook must emit.
  *
- * `hookSpecificOutput.additionalContext` goes to the model; `systemMessage`
- * is rendered to the user. Emitting both is what makes Edith both effective
- * and visible.
+ * Model-facing only, and there is no user-facing alternative here: the hooks
+ * reference lists SessionStart among the events that discard `systemMessage`
+ * ("stdout is used as context instead"), so both channels reach Claude and
+ * neither reaches the transcript. The only thing SessionStart renders to the
+ * user is stderr on exit 2, which displays as an error notice - not somewhere
+ * to put branding.
+ *
+ * Visible presence therefore lives in /edith and in the tool output.
  */
-export function buildHookPayload(primer: string, announcement?: string): string {
+export function buildHookPayload(primer: string): string {
   return JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
       additionalContext: primer
-    },
-    ...(announcement ? { systemMessage: announcement } : {})
+    }
   });
 }

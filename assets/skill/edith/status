@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""On-demand Edith status, rendered for /edith."""
+"""
+Rendered status for /edith.
+
+Plain text and box-drawing only - no ANSI, because this lands in a transcript
+rather than a terminal and escape codes would show up literally. Fixed width so
+the frame stays square in a proportional-font client as well as a monospace one.
+"""
 import json
 import urllib.request
 
 PORTS = (4319, 4320, 4321, 4322)
-MARK = "◈"
+W = 54  # inner width of the frame
 
 
 def get(path):
@@ -17,39 +23,74 @@ def get(path):
     return None, None
 
 
+def rule(left, right, label=""):
+    if label:
+        pad = W - len(label) - 2
+        return f"{left}─ {label} " + "─" * max(0, pad - 1) + right
+    return left + "─" * W + right
+
+
+def row(text=""):
+    return "│" + text.ljust(W) + "│"
+
+
+def field(key, value):
+    return row(f"  {key.ljust(12)}{value}")
+
+
+def meter(done, total, width=10):
+    if total <= 0:
+        return "▱" * width
+    filled = round((done / total) * width)
+    return "▰" * filled + "▱" * (width - filled)
+
+
 def main():
     health, port = get("/health")
+
     if not health:
-        print(f"{MARK} EDITH - not running")
-        print()
-        print("  The Edith app is not open, so Claude cannot reach your memories")
-        print("  this session. Open Edith and restart Claude Code.")
+        print(rule("╭", "╮", "◈ EDITH"))
+        print(row())
+        print(field("STATUS", "○ offline"))
+        print(row())
+        print(row("  The Edith app is not running, so Claude cannot"))
+        print(row("  reach your memories this session."))
+        print(row())
+        print(rule("╰", "╯"))
         return
 
     stats, _ = get("/stats")
+    notes = health.get("notes", 0)
 
-    print(f"{MARK} EDITH - Second Brain")
-    print()
-    print(f"  Server        http://127.0.0.1:{port}/mcp")
-    print(f"  Memories      {health.get('notes', 0)}")
+    print(rule("╭", "╮", "◈ EDITH"))
+    print(row())
+    print(field("STATUS", f"● online   127.0.0.1:{port}"))
+    print(field("MEMORIES", f"{notes} indexed"))
 
     if stats:
         t = stats.get("totals", {})
         recalled = t.get("searches", 0) + t.get("reads", 0)
-        saves = t.get("saves", 0)
-        print(f"  Recalled      {recalled} time{'' if recalled == 1 else 's'} since Edith started")
-        print(f"  Formed        {saves} new memor{'y' if saves == 1 else 'ies'}")
-        print(f"  Coverage      {stats.get('coverage', 'n/a')} of sessions used the brain")
+        formed = t.get("saves", 0)
+        seen = stats.get("sessionsSeen", 0)
+        used = stats.get("sessionsThatUsedBrain", 0)
 
         per = stats.get("perSession") or []
-        if per:
-            s = per[0]
-            here = s.get("searches", 0) + s.get("reads", 0)
-            print(f"  This session  {here} recalled, {s.get('saves', 0)} formed")
+        here = (per[0].get("searches", 0) + per[0].get("reads", 0)) if per else 0
 
-    print()
-    print("  Ask Claude to search your memories, or say")
-    print('  "review my recent sessions and save anything worth keeping".')
+        print(row())
+        print(field("RECALLED", f"{meter(here, max(here, 5))}  {here} this session"))
+        print(field("FORMED", f"{formed} new"))
+        print(field("ENGAGED", f"{meter(used, seen)}  {used}/{seen} sessions"))
+        print(row())
+        print(field("", f"{recalled} recall(s) since Edith started"))
+
+    print(row())
+    print(rule("├", "┤"))
+    print(row())
+    print(row("  ▸ ask Claude anything about your past work"))
+    print(row('  ▸ "review my sessions and save what matters"'))
+    print(row())
+    print(rule("╰", "╯"))
 
 
 if __name__ == "__main__":
