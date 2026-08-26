@@ -49,11 +49,29 @@ describe('live session detection', () => {
       watcher.once('activity', resolve)
     );
 
-    fs.appendFileSync(file, '\n' + line({ uuid: 'x2', parent: 'x1', role: 'assistant', text: 'mid-conversation' }));
+    /*
+     * Keep appending until the event lands. FSEvents registration is
+     * asynchronous in the kernel, so chokidar's 'ready' does not guarantee the
+     * very next write is delivered - a single append raced roughly one run in
+     * eight. This mirrors the real case anyway: a live session appends
+     * repeatedly, not once.
+     */
+    let n = 0;
+    const writing = setInterval(() => {
+      n++;
+      fs.appendFileSync(
+        file,
+        '\n' + line({ uuid: `x${n + 1}`, parent: `x${n}`, role: 'assistant', text: `turn ${n}` })
+      );
+    }, 250);
 
-    const event = await activity;
-    expect(event.sessionId).toBe(id);
-    await watcher.stop();
+    try {
+      const event = await activity;
+      expect(event.sessionId).toBe(id);
+    } finally {
+      clearInterval(writing);
+      await watcher.stop();
+    }
   }, 20000);
 
   it('does not report activity for subagent transcripts', async () => {
