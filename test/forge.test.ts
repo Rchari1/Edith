@@ -173,6 +173,10 @@ describe('discoverability', () => {
     const populated = buildPrimer(vault);
     expect(populated).toContain('propose_skill');
     expect(populated).toMatch(/names Edith directly/i);
+    // The failure this guards: Claude deliberated, then asked a clarifying
+    // question, instead of drafting. The queue is the review step.
+    expect(populated).toMatch(/immediately rather than interviewing/i);
+    expect(populated).toMatch(/review step/i);
 
     vault.close();
     rm(dir);

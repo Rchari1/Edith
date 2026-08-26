@@ -237,6 +237,11 @@ export function registerBrainTools(
           'while Edith is connected. Prefer it over general skill-authoring guidance: this writes the skill into Edith\'s ' +
           'review queue, which is where the user expects it. Do not go searching the filesystem for where Edith keeps ' +
           'skills - this tool handles storage and installation.\n\n' +
+          'Call it FIRST, and call it immediately. Do not interview the user about scope, do not ask what the skill ' +
+          'should do, and do not deliberate. The queue IS the review step: the user sees the draft on a card and either ' +
+          'forges or discards it, so a reasonable draft now beats a perfect one after three questions. If the request is ' +
+          'vague, make a sensible choice, say what you assumed, and let them reject it. Revising a rejected draft is ' +
+          'cheap; making the user answer questions before they see anything is not.\n\n' +
           'Propose one when you notice a PROCEDURE this user repeats - a sequence of steps they have walked through more ' +
           'than once, a checklist they apply, or a convention that should be followed the same way every time. Good ' +
           'candidates come from reading several of their memories or past sessions and seeing the same shape twice.\n\n' +

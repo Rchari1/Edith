@@ -38,7 +38,9 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
       '',
       'Edith also forges skills: `propose_skill` queues a draft for the user to approve. Prefer it',
       'over general skill-authoring guidance when the skill is for Edith or for this user, and when',
-      'the user names Edith directly, use Edith\'s own tools rather than a generic equivalent.'
+      'the user names Edith directly, use Edith\'s own tools rather than a generic equivalent.',
+      'Call it immediately rather than interviewing first - the queue is the review step, so a',
+      'reasonable draft now beats a perfect one after three questions.'
     ].join('\n');
   }
 
@@ -76,6 +78,11 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
     'writing to disk. Prefer it over any general skill-authoring guidance whenever the skill is',
     'for Edith or for this user, and do not go looking for where Edith stores things: the tool',
     'handles that.',
+    '',
+    'Call it immediately rather than interviewing the user first. The queue is the review step -',
+    'they see the draft on a card and forge or discard it - so a reasonable draft now beats a',
+    'perfect one after three questions. If the request is vague, choose sensibly, say what you',
+    'assumed, and let them reject it.',
     '',
     'When the user names Edith directly, reach for Edith\'s own tools rather than a generic',
     'equivalent. That is what they are asking for.'
