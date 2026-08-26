@@ -87,7 +87,12 @@ export class SessionWatcher extends EventEmitter {
     this.watcher = chokidar.watch(this.projectsRoot, {
       ignoreInitial: true,
       persistent: true,
-      awaitWriteFinish: { stabilityThreshold: 400, pollInterval: 100 },
+      // Deliberately no awaitWriteFinish. It suppresses events until a file
+      // stops changing, which is the opposite of the live "Claude is writing
+      // right now" signal, and it can defer indefinitely while a session is
+      // actively appending. Settling is debounced by scheduleSettle below, and
+      // the parser already tolerates a half-written trailing line, so nothing
+      // here needs to wait for the file to go quiet.
       ignored: (p: string) => p.includes(`${path.sep}memory${path.sep}`)
     });
 
