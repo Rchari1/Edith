@@ -2,7 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-export const SERVER_KEY = 'secondbrain';
+export const SERVER_KEY = 'edith';
+
+/**
+ * Names this app registered under previously. Left in place they would sit
+ * alongside the current entry pointing at the same port, so Claude would see
+ * two identical tool sets. Any found are removed whenever we register.
+ */
+export const LEGACY_SERVER_KEYS = ['secondbrain'];
 
 export interface Target {
   name: string;
@@ -108,25 +115,31 @@ export async function registerWith(target: Target, url: string): Promise<Registr
 
     const desired = { type: 'http', url };
     const current = servers[SERVER_KEY];
-    if (current && JSON.stringify(current) === JSON.stringify(desired)) {
+    const staleKeys = LEGACY_SERVER_KEYS.filter((k) => k in servers);
+
+    if (current && JSON.stringify(current) === JSON.stringify(desired) && staleKeys.length === 0) {
       return { target: target.name, configPath: target.configPath, status: 'already-current' };
     }
 
     // Back up once, the first time we ever touch this file.
-    const backup = `${target.configPath}.secondbrain-backup`;
+    const backup = `${target.configPath}.edith-backup`;
     if ((await exists(target.configPath)) && !(await exists(backup))) {
       await fs.copyFile(target.configPath, backup);
     }
 
-    config.mcpServers = { ...servers, [SERVER_KEY]: desired };
+    const next: Record<string, unknown> = { ...servers, [SERVER_KEY]: desired };
+    for (const stale of staleKeys) delete next[stale];
+    config.mcpServers = next;
     await writeJsonAtomic(target.configPath, config);
 
-    return {
-      target: target.name,
-      configPath: target.configPath,
-      status: 'registered',
-      detail: current ? 'updated existing entry' : 'added new entry'
-    };
+    const detail = [
+      current ? 'updated existing entry' : 'added new entry',
+      staleKeys.length ? `removed ${staleKeys.join(', ')}` : null
+    ]
+      .filter(Boolean)
+      .join('; ');
+
+    return { target: target.name, configPath: target.configPath, status: 'registered', detail };
   } catch (err) {
     return {
       target: target.name,
@@ -157,14 +170,27 @@ export async function unregisterAll(home = os.homedir()): Promise<RegistrationRe
     try {
       const config = await readJson(t.configPath);
       const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
-      if (!(SERVER_KEY in servers)) {
+      const removed: string[] = [];
+      for (const key of [SERVER_KEY, ...LEGACY_SERVER_KEYS]) {
+        if (key in servers) {
+          delete servers[key];
+          removed.push(key);
+        }
+      }
+      // Entries under a previous name must still be written out, even when the
+      // current key was never present.
+      if (removed.length === 0) {
         results.push({ target: t.name, configPath: t.configPath, status: 'skipped', detail: 'not present' });
         continue;
       }
-      delete servers[SERVER_KEY];
       config.mcpServers = servers;
       await writeJsonAtomic(t.configPath, config);
-      results.push({ target: t.name, configPath: t.configPath, status: 'registered', detail: 'removed' });
+      results.push({
+        target: t.name,
+        configPath: t.configPath,
+        status: 'registered',
+        detail: `removed ${removed.join(', ')}`
+      });
     } catch (err) {
       results.push({
         target: t.name,

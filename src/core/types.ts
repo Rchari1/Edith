@@ -1,4 +1,4 @@
-/** Shared domain types for SecondBrain. */
+/** Shared domain types for Edith. */
 
 /** A single meaningful exchange in a Claude session. Tool noise is already stripped. */
 export interface Turn {

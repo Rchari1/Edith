@@ -8,7 +8,7 @@ function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }] };
 }
 
-const MARK = '\u25c8'; // filled diamond - the brain's signature
+const MARK = '\u25c8'; // filled diamond - Edith's signature
 const FULL = '\u2593';
 const EMPTY = '\u2591';
 const ARROW = '\u2192';
@@ -29,7 +29,7 @@ const ORIGIN_LABEL: Record<NoteFrontmatter['origin'], string> = {
 };
 
 function header(title: string): string {
-  return `${MARK} SECOND BRAIN ${DOT} ${title}`;
+  return `${MARK} EDITH ${DOT} ${title}`;
 }
 
 /** Five-block relevance bar, scaled against the strongest hit in this result set. */

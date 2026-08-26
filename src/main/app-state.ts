@@ -92,7 +92,7 @@ export class AppState extends EventEmitter {
     });
     await this.watcher.start();
 
-    this.push({ type: 'status', message: 'SecondBrain ready', level: 'info', at: Date.now() });
+    this.push({ type: 'status', message: 'Edith ready', level: 'info', at: Date.now() });
   }
 
   /** Rebuild the distill queue, e.g. after the API key or model changes. */

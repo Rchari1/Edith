@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { registerAll, unregisterAll, detectTargets, SERVER_KEY } from '@core/onboarding/register.js';
+import { registerAll, unregisterAll, detectTargets, SERVER_KEY, LEGACY_SERVER_KEYS } from '@core/onboarding/register.js';
 import { tmpDir, rm } from './helpers.js';
 
 describe('MCP registration', () => {
@@ -38,7 +38,7 @@ describe('MCP registration', () => {
   it('backs the file up before the first modification', async () => {
     fs.writeFileSync(claudeJson, JSON.stringify({ keep: true }));
     await registerAll('http://127.0.0.1:4319/mcp', home);
-    const backup = `${claudeJson}.secondbrain-backup`;
+    const backup = `${claudeJson}.edith-backup`;
     expect(fs.existsSync(backup)).toBe(true);
     expect(JSON.parse(fs.readFileSync(backup, 'utf8'))).toEqual({ keep: true });
   });
@@ -64,6 +64,46 @@ describe('MCP registration', () => {
     const results = await registerAll('http://127.0.0.1:4319/mcp', home);
     expect(results.find((r) => r.target === 'Claude Code')?.status).toBe('registered');
     expect(JSON.parse(fs.readFileSync(claudeJson, 'utf8')).mcpServers[SERVER_KEY]).toBeTruthy();
+  });
+
+  it('removes the entry from a previous name so tools are not duplicated', async () => {
+    // A pre-rename install left a 'secondbrain' entry pointing at the same port.
+    fs.writeFileSync(
+      claudeJson,
+      JSON.stringify({
+        mcpServers: {
+          secondbrain: { type: 'http', url: 'http://127.0.0.1:4319/mcp' },
+          unrelated: { type: 'stdio', command: 'keep-me' }
+        }
+      })
+    );
+
+    const results = await registerAll('http://127.0.0.1:4319/mcp', home);
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+
+    expect(after.mcpServers[SERVER_KEY]).toEqual({ type: 'http', url: 'http://127.0.0.1:4319/mcp' });
+    for (const stale of LEGACY_SERVER_KEYS) expect(after.mcpServers[stale]).toBeUndefined();
+    expect(after.mcpServers.unrelated).toBeTruthy();
+    expect(results.find((r) => r.target === 'Claude Code')?.detail).toContain('removed');
+  });
+
+  it('does not report already-current while a stale entry still needs removing', async () => {
+    const url = 'http://127.0.0.1:4319/mcp';
+    fs.writeFileSync(
+      claudeJson,
+      JSON.stringify({ mcpServers: { [SERVER_KEY]: { type: 'http', url }, secondbrain: { type: 'http', url } } })
+    );
+    const results = await registerAll(url, home);
+    expect(results.find((r) => r.target === 'Claude Code')?.status).toBe('registered');
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+    expect(after.mcpServers.secondbrain).toBeUndefined();
+  });
+
+  it('unregister also clears entries from previous names', async () => {
+    fs.writeFileSync(claudeJson, JSON.stringify({ mcpServers: { secondbrain: { type: 'http' } } }));
+    await unregisterAll(home);
+    const after = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+    expect(after.mcpServers.secondbrain).toBeUndefined();
   });
 
   it('skips surfaces that are not installed', async () => {

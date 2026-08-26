@@ -1,7 +1,7 @@
 {
-  "name": "secondbrain",
+  "name": "edith",
   "version": "0.1.0",
-  "description": "A second brain for Claude \u2014 ingests Claude Code sessions, distills them into linked notes, and lights up as Claude uses them.",
+  "description": "Edith - a second brain for Claude. Ingests Claude sessions, distils them into linked notes, and lights up as Claude uses them.",
   "main": "./out/main/index.js",
   "author": "Raghav Chari",
   "license": "MIT",
@@ -35,8 +35,8 @@
     "vitest": "^4.1.11"
   },
   "build": {
-    "appId": "com.rchari.secondbrain",
-    "productName": "SecondBrain",
+    "appId": "com.rchari.edith",
+    "productName": "Edith",
     "files": [
       "out/**/*",
       "package.json"

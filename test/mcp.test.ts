@@ -97,7 +97,7 @@ describe('BrainServer over real MCP', () => {
   it('search results carry a relevance bar and the note\'s links', async () => {
     const res = await client.callTool({ name: 'search_brain', arguments: { query: 'weighting' } });
     const out = textOf(res);
-    expect(out).toContain('SECOND BRAIN');
+    expect(out).toContain('EDITH');
     expect(out).toMatch(/[\u2593\u2591]{5}/);      // five-block relevance bar
     expect(out).toContain('\u2192 sqlite-fts');     // outbound links rendered
   });

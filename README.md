@@ -1,11 +1,11 @@
-# SecondBrain
+# Edith
 
-A second brain for Claude.
+**A second brain for Claude.**
 
-SecondBrain watches your Claude Code sessions, distills them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain during a session, the parts it used light up in the app.
+Edith watches your Claude Code sessions, distils them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain during a session, the parts it used light up in the app.
 
 ```
-Claude session ──MCP──▶  SecondBrain.app  ──▶  the graph lights up
+Claude session ──MCP──▶      Edith.app      ──▶  the graph lights up
                               │
                               └── vault/notes/*.md
 ```
@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-On first launch the app starts its MCP server on `127.0.0.1:4319` and registers itself with every Claude surface it finds - one user-scope entry in `~/.claude.json` covers the Claude Code CLI, the VS Code extension, and all your projects. Restart Claude Code and the brain is available.
+On first launch Edith starts its MCP server on `127.0.0.1:4319` and registers itself with every Claude surface it finds - one user-scope entry in `~/.claude.json` covers the Claude Code CLI, the VS Code extension, and all your projects. Restart Claude Code and the brain is available.
 
 Add your Anthropic API key in **Settings** (or export `ANTHROPIC_API_KEY`) to enable distillation, then press **Backfill** to ingest the sessions already on disk. Without a key the app still runs - search and `save_note` work, only automatic distillation pauses.
 
@@ -49,7 +49,7 @@ npm run dist
 | **Serve** | In-process MCP server over local HTTP |
 | **Light up** | Every tool call emits an event straight to the renderer |
 
-The app hosts the MCP server *itself* rather than spawning it. That is what makes the highlighting instant: a tool call and the glow are the same tick.
+Edith hosts the MCP server *itself* rather than spawning it. That is what makes the highlighting instant: a tool call and the glow are the same tick.
 
 ### Adding your own content
 
@@ -85,9 +85,12 @@ Every note records the sessions it came from. That provenance is written from da
 
 ## Things worth knowing
 
-**An API key does not give access to claude.ai history.** The Messages API is stateless; there is no endpoint listing past conversations. SecondBrain reads Claude Code's local transcripts. The API key is used only to distill them.
+**Upgrading from the old name.** Edith was previously called SecondBrain. On first launch it copies your existing vault and settings across from the old location, and replaces the stale `secondbrain` entry in `~/.claude.json` with `edith` so Claude does not see two identical tool sets. The old directory is left untouched as a fallback.
 
-**Most `.jsonl` files under `~/.claude/projects` are not sessions.** Subagent and workflow transcripts nest under session directories and typically outnumber real sessions by roughly 9:1. SecondBrain classifies by path shape so they never become notes.
+
+**An API key does not give access to claude.ai history.** The Messages API is stateless; there is no endpoint listing past conversations. Edith reads Claude Code's local transcripts. The API key is used only to distill them.
+
+**Most `.jsonl` files under `~/.claude/projects` are not sessions.** Subagent and workflow transcripts nest under session directories and typically outnumber real sessions by roughly 9:1. Edith classifies by path shape so they never become notes.
 
 **Transcripts are trees.** Interrupting Claude forks the history and leaves the abandoned branch in the file. The parser walks back from `last-prompt.leafUuid` so only what actually happened gets distilled.
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AppState } from './app-state.js';
 import { registerAll, unregisterAll } from '../core/onboarding/register.js';
 import { IMPORTABLE_EXTENSIONS } from '../core/importer/index.js';
+import { migrateLegacyUserData } from './migrate.js';
 import type { BrainEvent } from '../core/types.js';
 
 
@@ -166,6 +167,18 @@ function start(): void {
     state.on('vault-changed', () => send('brain:vault-changed', null));
 
     try {
+      // Renaming the product moved userData; bring a prior install's vault and
+      // settings across before anything reads from the new location.
+      const migration = await migrateLegacyUserData(app.getPath('userData'));
+      if (migration.migrated) {
+        send('brain:event', {
+          type: 'status',
+          message: `Brought ${migration.items.join(' and ')} across from your previous install`,
+          level: 'info',
+          at: Date.now()
+        });
+      }
+
       await state.start();
       registerIpc(state);
       send('brain:status', state.status());

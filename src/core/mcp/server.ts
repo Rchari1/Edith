@@ -35,7 +35,7 @@ export async function findFreePort(start = DEFAULT_PORT, attempts = 50): Promise
 }
 
 /**
- * The brain's MCP endpoint, hosted inside the desktop app.
+ * Edith's MCP endpoint, hosted inside the desktop app.
  *
  * Runs in stateless mode: each POST gets a fresh McpServer and transport.
  * That keeps concurrent Claude sessions from colliding on request ids, and
@@ -79,7 +79,7 @@ export class BrainServer {
 
     app.post('/mcp', async (req, res) => {
       this.recordCall(req.body);
-      const server = new McpServer({ name: 'secondbrain', version: '0.1.0' });
+      const server = new McpServer({ name: 'edith', version: '0.1.0' });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
       res.on('close', () => {
