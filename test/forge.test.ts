@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Forge } from '@core/forge/forge.js';
 import { installProposal, uninstallProposal, renderSkill, FORGED_BY } from '@core/forge/install.js';
+import { Vault } from '@core/vault/vault.js';
+import { SqliteSearchProvider } from '@core/vault/search.js';
+import { buildPrimer } from '@core/context/primer.js';
 import { tmpDir, rm } from './helpers.js';
 
 const draft = {
@@ -153,5 +156,25 @@ describe('forge installation', () => {
     // A newline inside the description would break the YAML frontmatter.
     expect(skill.split('\n').filter((l) => l.startsWith('description:'))).toHaveLength(1);
     expect(skill).not.toMatch(/description: multi\nline/);
+  });
+});
+
+describe('discoverability', () => {
+  it('the primer tells Claude that Edith forges skills', async () => {
+    const dir = tmpDir('sb-primer-forge-');
+    const vault = new Vault(dir, new SqliteSearchProvider(path.join(dir, 'index.db')));
+    await vault.init();
+
+    // Empty and populated primers both have to mention it: the failure mode was
+    // Claude reaching for generic skill-authoring guidance because the primer
+    // never said Edith could do this.
+    expect(buildPrimer(vault)).toContain('propose_skill');
+    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
+    const populated = buildPrimer(vault);
+    expect(populated).toContain('propose_skill');
+    expect(populated).toMatch(/names Edith directly/i);
+
+    vault.close();
+    rm(dir);
   });
 });
