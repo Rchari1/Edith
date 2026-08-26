@@ -17,6 +17,10 @@ interface Status {
   noteCount: number;
   hasApiKey: boolean;
   registrations: Array<{ target: string; status: string; detail?: string }>;
+  vaultPath: string;
+  watching: string;
+  hook: { status: string; configPath: string; detail?: string } | null;
+  lastSessionAt: number | null;
   queue: { total: number; done: number; failed: number; pending: number };
 }
 type BrainEvent =
@@ -42,6 +46,8 @@ declare global {
       backfill(): Promise<{ queued: number; skipped: number }>;
       reregister(): Promise<unknown>;
       deleteNote(id: string): Promise<boolean>;
+      updateNote(id: string, patch: { title?: string; body?: string }): Promise<NoteDto | null>;
+      reregister(): Promise<unknown>;
       revealVault(): Promise<void>;
       pickFiles(): Promise<string[]>;
       importFiles(files: string[], mode: 'verbatim' | 'distill'): Promise<{
@@ -185,6 +191,9 @@ async function selectNote(id: string): Promise<void> {
     meta.appendChild(line3);
   }
 
+  currentBody = note.body;
+  currentTitle = f.title;
+  if (editing) setEditing(false);
   $('detail-body').innerHTML = renderMarkdown(note.body);
   $('detail').classList.remove('hidden');
   renderNoteList(allNotes);
@@ -558,6 +567,118 @@ function showStateLegend(): void {
   legendTimer = window.setTimeout(() => el.classList.remove('visible'), 32000);
 }
 
+/* ---------------- inline editing ---------------- */
+
+let editing = false;
+let currentBody = '';
+let currentTitle = '';
+
+function setEditing(on: boolean): void {
+  editing = on;
+  const title = $('detail-title');
+  $('detail-body').classList.toggle('hidden', on);
+  $('detail-editor').classList.toggle('hidden', !on);
+  $('detail-actions-view').classList.toggle('hidden', on);
+  $('detail-actions-edit').classList.toggle('hidden', !on);
+  title.setAttribute('contenteditable', String(on));
+  title.classList.toggle('editing', on);
+
+  if (on) {
+    const ta = $<HTMLTextAreaElement>('detail-editor');
+    ta.value = currentBody;
+    ta.focus();
+  }
+}
+
+async function saveEdit(): Promise<void> {
+  if (!selectedId) return;
+  const body = $<HTMLTextAreaElement>('detail-editor').value;
+  const title = ($('detail-title').textContent ?? '').trim();
+  const updated = await window.brain.updateNote(selectedId, { title, body });
+  if (updated) {
+    currentBody = updated.body;
+    $('detail-body').innerHTML = renderMarkdown(updated.body);
+  }
+  setEditing(false);
+  await refreshAll();
+}
+
+$('btn-edit').addEventListener('click', () => setEditing(true));
+$('btn-edit-cancel').addEventListener('click', () => {
+  $('detail-title').textContent = currentTitle;
+  setEditing(false);
+});
+$('btn-edit-save').addEventListener('click', () => void saveEdit());
+
+/* ---------------- connection panel ---------------- */
+
+function relTime(ts: number | null): string {
+  if (!ts) return 'not yet';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function connRow(k: string, v: string, cls = ''): string {
+  return `<div class="conn-row"><span class="conn-k">${escapeHtml(k)}</span><span class="conn-v ${cls}">${escapeHtml(v)}</span></div>`;
+}
+
+async function openConnection(): Promise<void> {
+  const s = await window.brain.status();
+  const registered = s.registrations.filter(
+    (r) => r.status === 'registered' || r.status === 'already-current'
+  );
+  const failed = s.registrations.filter((r) => r.status === 'failed');
+  const hookOk = s.hook && (s.hook.status === 'registered' || s.hook.status === 'already-current');
+
+  const rows = [
+    connRow('Server', s.serverUrl ?? 'offline', s.serverUrl ? 'ok' : 'bad'),
+    connRow(
+      'Claude',
+      failed.length
+        ? `${failed.length} failed`
+        : registered.length
+          ? registered.map((r) => r.target).join(', ')
+          : 'none found',
+      failed.length ? 'bad' : registered.length ? 'ok' : 'warn'
+    ),
+    connRow(
+      'Session primer',
+      hookOk ? 'installed' : s.hook ? s.hook.status : 'not installed',
+      hookOk ? 'ok' : 'warn'
+    ),
+    connRow('Last session', relTime(s.lastSessionAt), s.lastSessionAt ? '' : 'warn'),
+    connRow('Memories', String(s.noteCount)),
+    connRow('Watching', s.watching),
+    connRow('Vault', s.vaultPath)
+  ].join('');
+
+  $('conn-rows').innerHTML = rows;
+
+  const note = document.createElement('div');
+  note.className = 'conn-note';
+  note.textContent = hookOk
+    ? 'Changes to registration only take effect in a new Claude session. Restart Claude Code if something looks stale.'
+    : 'Without the session primer Claude will rarely consult Edith on its own.';
+  $('conn-rows').appendChild(note);
+
+  $('connection').classList.remove('hidden');
+}
+
+$('presence').addEventListener('click', () => void openConnection());
+$('conn-close').addEventListener('click', () => $('connection').classList.add('hidden'));
+$('conn-reregister').addEventListener('click', async () => {
+  const btn = $<HTMLButtonElement>('conn-reregister');
+  btn.disabled = true;
+  try {
+    await window.brain.reregister();
+    await openConnection();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 window.brain.onEvent((e) => {
   if (e.type === 'considered') {
     graph.activate(e.noteIds, 'considered');
@@ -584,8 +705,19 @@ window.brain.onStatus((s) => renderStatus(s));
 window.brain.onVaultChanged(() => void refreshAll());
 
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && editing) {
+    $('detail-title').textContent = currentTitle;
+    setEditing(false);
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 's' && editing) {
+    e.preventDefault();
+    void saveEdit();
+    return;
+  }
   if (e.key === 'Escape') {
     closeDetail();
+    $('connection').classList.add('hidden');
     $('settings').classList.add('hidden');
     $('import').classList.add('hidden');
   }

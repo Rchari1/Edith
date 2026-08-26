@@ -521,3 +521,68 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   transition: opacity 0.6s ease;
 }
 #activity-inner.faded { opacity: 0; }
+
+/* ---------- inline editing ---------- */
+.detail-editor {
+  flex: 1;
+  min-height: 220px;
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  resize: none;
+  outline: none;
+}
+.detail-editor:focus { border-color: #3d4d70; }
+#detail-title.editing {
+  outline: none;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 3px;
+}
+.edit-hint {
+  flex: 1;
+  align-self: center;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---------- connection panel ----------
+   Every failure this app has actually had was silent: a stale port, a second
+   instance, a hook pointing nowhere. This is the one screen that answers
+   "why is nothing happening" without a terminal. */
+.presence {
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 14px 0 0;
+}
+.presence:hover .presence-text { color: var(--text); }
+
+.conn-rows { display: flex; flex-direction: column; gap: 1px; margin-bottom: 16px; }
+.conn-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.conn-row:last-child { border-bottom: none; }
+.conn-k { flex: 0 0 116px; color: var(--muted); }
+.conn-v { flex: 1; min-width: 0; color: var(--text); word-break: break-all; }
+.conn-v.ok { color: #7dd3fc; }
+.conn-v.warn { color: #f5b942; }
+.conn-v.bad { color: #ff8f8f; }
+.conn-note {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
