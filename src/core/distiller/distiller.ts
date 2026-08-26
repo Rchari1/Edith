@@ -47,6 +47,65 @@ export class Distiller {
     this.maxContextIds = opts.maxContextIds ?? 200;
   }
 
+  /**
+   * Distill arbitrary text - a pasted document, an imported file - rather than
+   * a session. Same prompt and schema; the provenance is the source label
+   * instead of a session id.
+   */
+  async distillText(label: string, text: string): Promise<DistillResult> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return { sessionId: label, noteIds: [], skipped: true, reason: 'empty text' };
+    }
+
+    const existingIds = this.vault.list().slice(0, this.maxContextIds).map((n) => n.frontmatter.id);
+    const message = await this.client.messages.parse({
+      model: this.model,
+      max_tokens: 16000,
+      system: SYSTEM_PROMPT,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'high', format: zodOutputFormat(DistillSchema) },
+      messages: [
+        {
+          role: 'user',
+          content: buildUserPrompt(`# Document: ${label}\n\n${trimmed}`, existingIds)
+        }
+      ]
+    });
+
+    if (message.stop_reason === 'refusal') {
+      return { sessionId: label, noteIds: [], skipped: true, reason: 'model declined' };
+    }
+
+    const parsed = message.parsed_output as DistillOutput | null | undefined;
+    if (!parsed?.concepts?.length) {
+      return { sessionId: label, noteIds: [], skipped: true, reason: 'no durable concepts found' };
+    }
+
+    const source: NoteSource = { session: `import:${label}`, project: 'imported', at: new Date().toISOString() };
+    const noteIds: string[] = [];
+    for (const concept of parsed.concepts) {
+      const note = await this.vault.upsert({
+        id: concept.id,
+        title: concept.title,
+        body: concept.body,
+        links: concept.links,
+        tags: concept.tags,
+        origin: 'distilled',
+        source
+      });
+      noteIds.push(note.frontmatter.id);
+    }
+
+    return {
+      sessionId: label,
+      noteIds,
+      skipped: false,
+      inputTokens: message.usage?.input_tokens,
+      outputTokens: message.usage?.output_tokens
+    };
+  }
+
   async distill(session: Session, force = false): Promise<DistillResult> {
     if (!force && this.vault.hasSession(session.id)) {
       return { sessionId: session.id, noteIds: [], skipped: true, reason: 'already distilled' };

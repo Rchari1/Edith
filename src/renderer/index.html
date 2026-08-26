@@ -26,7 +26,10 @@
           <div class="status-row"><span class="k">Claude</span><span class="v" id="s-reg">checking</span></div>
           <div class="status-row"><span class="k">Queue</span><span class="v" id="s-queue">idle</span></div>
           <div class="actions">
+            <button id="btn-import" class="primary" title="Add your own files or text">Add content</button>
             <button id="btn-backfill" title="Ingest sessions already on disk">Backfill</button>
+          </div>
+          <div class="actions">
             <button id="btn-vault" title="Open the vault folder">Vault</button>
             <button id="btn-settings" title="Settings">Settings</button>
           </div>
@@ -56,6 +59,38 @@
         <div class="detail-actions">
           <button id="btn-open-file">Open .md</button>
           <button id="btn-delete" class="danger">Delete</button>
+        </div>
+      </section>
+
+      <section id="import" class="modal hidden">
+        <div class="modal-card">
+          <h2>Add to your brain</h2>
+
+          <button class="dropzone" id="import-pick">
+            <strong>Choose files</strong>
+            <small>.md &middot; .markdown &middot; .txt &middot; .mdx</small>
+          </button>
+          <div id="import-files" class="import-files hidden"></div>
+
+          <div class="or-rule"><span>or paste text</span></div>
+
+          <label>Title
+            <input id="import-title" type="text" placeholder="What is this?" />
+          </label>
+          <textarea id="import-body" rows="5" placeholder="Paste notes, a document, anything worth remembering&hellip;"></textarea>
+
+          <div class="mode-choice">
+            <label class="row"><input type="radio" name="imode" value="verbatim" checked />
+              <span><strong>Keep as written</strong><small>Stored exactly as-is. Free.</small></span></label>
+            <label class="row"><input type="radio" name="imode" value="distill" />
+              <span><strong>Distill into concepts</strong><small>Extracts ideas. Uses your API key.</small></span></label>
+          </div>
+
+          <div id="import-msg" class="import-msg hidden"></div>
+          <div class="modal-actions">
+            <button id="import-cancel">Cancel</button>
+            <button id="import-go" class="primary">Add to brain</button>
+          </div>
         </div>
       </section>
 

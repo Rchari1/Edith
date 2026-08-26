@@ -36,6 +36,21 @@ describe('note serialization', () => {
     expect(round.body).toBe('Body text.');
   });
 
+  it('preserves dates written on an earlier day', () => {
+    // YAML turns an unquoted 2026-01-02 into a Date; if that is not coerced back
+    // the note silently gets stamped with today's date on every reload.
+    const raw = `---\nid: old\ntitle: Old Note\ncreated: 2026-01-02\nupdated: 2026-01-03\n---\nbody`;
+    const n = parseNote(raw, '/tmp/old.md', 'old');
+    expect(n.frontmatter.created).toBe('2026-01-02');
+    expect(n.frontmatter.updated).toBe('2026-01-03');
+  });
+
+  it('survives a serialize/parse cycle without date drift', () => {
+    const first = parseNote(`---\nid: d\ntitle: D\ncreated: 2025-06-01\nupdated: 2025-06-01\n---\nb`, '/tmp/d.md', 'd');
+    const second = parseNote(serializeNote(first), '/tmp/d.md', 'd');
+    expect(second.frontmatter.created).toBe('2025-06-01');
+  });
+
   it('tolerates hand-edited frontmatter with wrong types', () => {
     const raw = `---\nid: x\ntitle: 123\nlinks: "not-a-list"\nsources: garbage\n---\nbody`;
     const n = parseNote(raw, '/tmp/x.md', 'x');

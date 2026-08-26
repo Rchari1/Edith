@@ -16,6 +16,7 @@ Claude session ──MCP──▶  SecondBrain.app  ──▶  the graph lights 
 - **Distills, doesn't archive.** An Opus 5 pass extracts durable concepts - decisions and their reasoning, gotchas, conventions - and skips narration. One note per idea, linked to related ideas.
 - **Serves Claude over MCP.** `search_brain`, `read_note`, `list_notes`, and `save_note`. Claude both reads from and writes to the brain mid-session.
 - **Shows you the retrieval.** A search dims-glows what Claude *considered*; opening a note brightly glows what it actually *used*. Highlights fade over 30 seconds.
+- **Takes your own content too.** **Add content** imports `.md`, `.markdown`, `.txt`, and `.mdx` files, or anything you paste. Files keep their existing frontmatter, so importing an Obsidian vault preserves ids and links instead of duplicating notes. Import as written, or distil into concepts.
 - **Plain Markdown.** Files on disk are the source of truth. Edit them in any editor. Delete the index and it rebuilds.
 
 ## Install
@@ -49,6 +50,17 @@ npm run dist
 | **Light up** | Every tool call emits an event straight to the renderer |
 
 The app hosts the MCP server *itself* rather than spawning it. That is what makes the highlighting instant: a tool call and the glow are the same tick.
+
+### Adding your own content
+
+**Add content** in the sidebar opens an import dialog with two modes:
+
+| Mode | What it does | Cost |
+|---|---|---|
+| Keep as written | Stores the file or text verbatim as a note | free |
+| Distil into concepts | Runs the same extraction used on sessions | one API call |
+
+Re-importing a file **deepens** the existing note rather than creating a duplicate, so syncing a folder repeatedly is safe. A file with broken frontmatter loses its metadata, not its content.
 
 ### Note format
 

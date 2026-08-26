@@ -77,12 +77,52 @@ describe('BrainServer over real MCP', () => {
 
   it('read_note on a missing id fails gracefully', async () => {
     const res = await client.callTool({ name: 'read_note', arguments: { id: 'does-not-exist' } });
-    expect(textOf(res)).toContain('No note with id');
+    expect(textOf(res)).toContain('no note "does-not-exist"');
+  });
+
+  it('read_note suggests near matches for a wrong id', async () => {
+    const res = await client.callTool({ name: 'read_note', arguments: { id: 'bm25-weighting-typo' } });
+    const out = textOf(res);
+    expect(out).toContain('Did you mean');
+    expect(out).toContain('bm25-weighting');
   });
 
   it('search with no matches does not error', async () => {
     const res = await client.callTool({ name: 'search_brain', arguments: { query: 'zzzznothing' } });
-    expect(textOf(res)).toContain('No notes matched');
+    const out = textOf(res);
+    expect(out).toContain('no match for "zzzznothing"');
+    expect(out).toContain('note(s)');
+  });
+
+  it('search results carry a relevance bar and the note\'s links', async () => {
+    const res = await client.callTool({ name: 'search_brain', arguments: { query: 'weighting' } });
+    const out = textOf(res);
+    expect(out).toContain('SECOND BRAIN');
+    expect(out).toMatch(/[\u2593\u2591]{5}/);      // five-block relevance bar
+    expect(out).toContain('\u2192 sqlite-fts');     // outbound links rendered
+  });
+
+  it('list_notes renders an origin legend', async () => {
+    const res = await client.callTool({ name: 'list_notes', arguments: {} });
+    const out = textOf(res);
+    expect(out).toContain('saved by Claude');
+    expect(out).toContain('distilled');
+    expect(out).toContain('written by hand');
+  });
+
+  it('save_note distinguishes a new note from a deepened one', async () => {
+    const first = await client.callTool({
+      name: 'save_note',
+      arguments: { id: 'deepen-me', title: 'Deepen Me', body: 'First half.' }
+    });
+    expect(textOf(first)).toContain('note saved');
+
+    const second = await client.callTool({
+      name: 'save_note',
+      arguments: { id: 'deepen-me', title: 'Deepen Me', body: 'Second half.' }
+    });
+    expect(textOf(second)).toContain('note deepened');
+    expect(vault.get('deepen-me')!.body).toContain('First half.');
   });
 
   it('save_note writes to the vault and emits a saved event', async () => {
