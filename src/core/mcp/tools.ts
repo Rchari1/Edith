@@ -4,6 +4,7 @@ import type { Vault } from '../vault/vault.js';
 import type { SearchHit, NoteFrontmatter } from '../types.js';
 import type { BrainEventBus } from './events.js';
 import type { SessionSource } from '../sessions/source.js';
+import type { Forge } from '../forge/forge.js';
 
 function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }] };
@@ -56,7 +57,8 @@ export function registerBrainTools(
   server: McpServer,
   vault: Vault,
   bus: BrainEventBus,
-  sessions?: SessionSource
+  sessions?: SessionSource,
+  forge?: Forge
 ): void {
   server.registerTool(
     'search_brain',
@@ -222,6 +224,71 @@ export function registerBrainTools(
       return text(lines.join('\n'));
     }
   );
+
+  if (forge) {
+    server.registerTool(
+      'propose_skill',
+      {
+        title: `${MARK} Propose a skill`,
+        description:
+          'Propose a reusable Claude Code skill for the user to review. The proposal is queued in Edith; nothing is ' +
+          'installed until the user approves it.\n\n' +
+          'Propose one when you notice a PROCEDURE this user repeats - a sequence of steps they have walked through more ' +
+          'than once, a checklist they apply, or a convention that should be followed the same way every time. Good ' +
+          'candidates come from reading several of their memories or past sessions and seeing the same shape twice.\n\n' +
+          'A note and a skill are different things. A note records what is true ("we bind the next free port because a ' +
+          'taken port should never be fatal"). A skill records how to do something ("to add a new MCP tool: register it ' +
+          'in tools.ts, add the description, write the test, update the preview script"). If it has no steps, it is a note ' +
+          '- use save_note instead.\n\n' +
+          'Do NOT propose skills speculatively, for one-off tasks, or for anything already covered by an existing skill. ' +
+          'A queue full of weak proposals is worse than an empty one, because the user stops reading it.',
+        inputSchema: {
+          title: z.string().describe('Short human title, 2-5 words'),
+          description: z
+            .string()
+            .describe(
+              "The skill's own description - what Claude reads later to decide whether to use it. State what it does and when to use it."
+            ),
+          body: z
+            .string()
+            .describe('The skill body in markdown: the actual steps, in order, specific to this user.'),
+          rationale: z
+            .string()
+            .optional()
+            .describe('Why this is worth having. Shown to the user while they decide.'),
+          sources: z.array(z.string()).optional().describe('Note ids this was drawn from'),
+          id: z.string().optional().describe('kebab-case id; omit to derive from the title')
+        }
+      },
+      async ({ title, description, body, rationale, sources, id }) => {
+        const { proposal, reason } = await forge.propose({
+          title,
+          description,
+          body,
+          ...(rationale ? { rationale } : {}),
+          ...(sources ? { sources } : {}),
+          ...(id ? { id } : {})
+        });
+
+        if (!proposal) {
+          return text(`${header('skill not queued')}\n\n  ${title}\n  ${reason}`);
+        }
+
+        bus.emitEvent({ type: 'skill-proposed', skillId: proposal.id, title: proposal.title, at: Date.now() });
+
+        const pending = forge.counts().proposed;
+        return text(
+          [
+            header('skill proposed'),
+            '',
+            `  \u2726 ${proposal.id}`,
+            `    "${proposal.title}"`,
+            `    awaiting review in Edith ${DOT} ${pending} in the queue`
+          ].join('\n')
+        );
+      }
+    );
+  }
 
   // Session review. Edith holds no API key of its own - when the user asks
   // Claude to go through past sessions, the reading and the judgement happen

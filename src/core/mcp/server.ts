@@ -7,6 +7,7 @@ import type { Vault } from '../vault/vault.js';
 import { BrainEventBus } from './events.js';
 import { registerBrainTools } from './tools.js';
 import type { SessionSource } from '../sessions/source.js';
+import type { Forge } from '../forge/forge.js';
 import { buildPrimer, buildHookPayload } from '../context/primer.js';
 import { RetrievalStats } from './stats.js';
 
@@ -55,7 +56,8 @@ export class BrainServer {
   constructor(
     private readonly vault: Vault,
     private readonly opts: BrainServerOptions = {},
-    private readonly sessions?: SessionSource
+    private readonly sessions?: SessionSource,
+    private readonly forge?: Forge
   ) {}
 
   get port(): number | null {
@@ -114,7 +116,7 @@ export class BrainServer {
       });
 
       try {
-        registerBrainTools(server, this.vault, this.bus, this.sessions);
+        registerBrainTools(server, this.vault, this.bus, this.sessions, this.forge);
         await server.connect(transport);
         await transport.handleRequest(req, res, req.body);
       } catch (err) {

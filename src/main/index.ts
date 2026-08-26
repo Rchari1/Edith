@@ -135,6 +135,29 @@ function registerIpc(appState: AppState): void {
     }
   );
 
+  ipcMain.handle('forge:list', () => ({
+    proposals: appState.forge.list(),
+    counts: appState.forge.counts()
+  }));
+
+  ipcMain.handle('forge:accept', async (_e, id: string) => {
+    const r = await appState.acceptSkill(id);
+    send('forge:changed', null);
+    return r;
+  });
+
+  ipcMain.handle('forge:reject', async (_e, id: string) => {
+    const r = await appState.rejectSkill(id);
+    send('forge:changed', null);
+    return r;
+  });
+
+  ipcMain.handle('forge:undo', async (_e, id: string) => {
+    const r = await appState.undoSkill(id);
+    send('forge:changed', null);
+    return r;
+  });
+
   ipcMain.handle('brain:reveal-vault', () => {
     void shell.openPath(appState.settings.vaultPath);
   });
@@ -194,6 +217,7 @@ function start(): void {
       if (event.type === 'saved') send('brain:vault-changed', null);
     });
     state.on('vault-changed', () => send('brain:vault-changed', null));
+    state.on('forge-changed', () => send('forge:changed', null));
 
     try {
       // Renaming the product moved userData; bring a prior install's vault and

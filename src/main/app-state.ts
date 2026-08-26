@@ -6,6 +6,9 @@ import { SqliteSearchProvider } from '../core/vault/search.js';
 import { BrainServer, findFreePort } from '../core/mcp/server.js';
 import { SessionWatcher } from '../core/watcher/index.js';
 import { WatcherSessionSource } from '../core/sessions/source.js';
+import { Forge } from '../core/forge/forge.js';
+import { installProposal, uninstallProposal } from '../core/forge/install.js';
+import type { SkillProposal } from '../core/forge/types.js';
 import { createThrottle } from '../core/util/throttle.js';
 import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
@@ -41,6 +44,7 @@ export interface BrainStatus {
 export class AppState extends EventEmitter {
   settings!: Settings;
   vault!: Vault;
+  forge!: Forge;
   server!: BrainServer;
   watcher!: SessionWatcher;
   queue: DistillQueue | null = null;
@@ -68,6 +72,9 @@ export class AppState extends EventEmitter {
     );
     await this.vault.init();
 
+    this.forge = new Forge(this.settings.vaultPath);
+    await this.forge.init();
+
     // Constructed before the server so its sessions can be exposed as tools;
     // watching itself does not begin until start() below.
     this.watcher = new SessionWatcher({ settleMs: 8000 });
@@ -76,7 +83,8 @@ export class AppState extends EventEmitter {
     this.server = new BrainServer(
       this.vault,
       { port },
-      new WatcherSessionSource(this.watcher, this.vault)
+      new WatcherSessionSource(this.watcher, this.vault),
+      this.forge
     );
     this.server.bus.onEvent((e) => this.emit('event', e));
     await this.server.start();
@@ -305,6 +313,52 @@ export class AppState extends EventEmitter {
       at: Date.now()
     });
     this.emit('vault-changed');
+  }
+
+  /**
+   * Accept a proposal: install it as a real skill, then record the decision.
+   *
+   * Install first. If the write fails or collides with a skill Edith did not
+   * create, the proposal stays in the queue rather than being marked accepted
+   * for something that never landed on disk.
+   */
+  async acceptSkill(id: string): Promise<{ ok: boolean; detail?: string; proposal?: SkillProposal }> {
+    const proposal = this.forge.get(id);
+    if (!proposal) return { ok: false, detail: 'no such proposal' };
+
+    const result = await installProposal(proposal);
+    if (result.status !== 'installed') {
+      return { ok: false, detail: result.detail ?? result.status };
+    }
+
+    const updated = await this.forge.setStatus(id, 'accepted', result.dir);
+    this.push({
+      type: 'status',
+      message: `Forged skill: ${proposal.title} - available in a new Claude session`,
+      level: 'info',
+      at: Date.now()
+    });
+    this.emit('forge-changed');
+    return { ok: true, ...(updated ? { proposal: updated } : {}) };
+  }
+
+  async rejectSkill(id: string): Promise<{ ok: boolean }> {
+    const updated = await this.forge.setStatus(id, 'rejected');
+    this.emit('forge-changed');
+    return { ok: Boolean(updated) };
+  }
+
+  /** Undo an acceptance: remove the installed skill and requeue the proposal. */
+  async undoSkill(id: string): Promise<{ ok: boolean; detail?: string }> {
+    const proposal = this.forge.get(id);
+    if (!proposal) return { ok: false, detail: 'no such proposal' };
+    if (proposal.status === 'accepted') {
+      const result = await uninstallProposal(id);
+      if (result.status === 'conflict') return { ok: false, detail: result.detail ?? 'conflict' };
+    }
+    await this.forge.restore(id);
+    this.emit('forge-changed');
+    return { ok: true };
   }
 
   async updateSettings(patch: Partial<Settings>): Promise<Settings> {
