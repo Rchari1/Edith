@@ -66,11 +66,24 @@ describe('session primer', () => {
   });
 
   it('announces itself in a single user-visible line', async () => {
-    expect(buildAnnouncement(vault)).toContain('no memories yet');
+    expect(buildAnnouncement(vault)).toContain('ready to capture');
+
     await vault.upsert({ id: 'a', title: 'A', body: 'x' });
-    expect(buildAnnouncement(vault)).toBe('Edith connected - 1 memory');
+    expect(buildAnnouncement(vault)).toContain('1 memory indexed');
+
     await vault.upsert({ id: 'b', title: 'B', body: 'y' });
-    expect(buildAnnouncement(vault)).toBe('Edith connected - 2 memories');
+    const line = buildAnnouncement(vault);
+    expect(line).toContain('EDITH ONLINE');
+    expect(line).toContain('2 memories indexed');
+    expect(line.split('\n')).toHaveLength(1);
+  });
+
+  it('carries no ANSI or markdown, which would render literally', async () => {
+    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
+    const line = buildAnnouncement(vault);
+    // eslint-disable-next-line no-control-regex
+    expect(line).not.toMatch(/\u001b\[/);
+    expect(line).not.toMatch(/[*_`]/);
   });
 
   it('sends the primer to the model and the announcement to the user', () => {

@@ -70,18 +70,31 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
 }
 
 /**
- * One short line announcing Edith, shown to the user in the transcript.
+ * One line announcing Edith, shown to the user in the transcript.
  *
  * Deliberately separate from the primer. `additionalContext` reaches the model
  * only - which is why the primer worked while being completely invisible, and
  * why the app appeared dead in the session even when it was not. This is the
- * visible half, and it stays a single line because it prints at the top of
- * every session and chrome that repeats has to be small.
+ * visible half.
+ *
+ * Plain text with unicode only: no ANSI, because this is transcript content
+ * rather than terminal output, and no markdown syntax, because if the client
+ * renders it literally the asterisks show up as asterisks. Set in the register
+ * of a system readout - mark, status, then facts - so it reads as instrument
+ * chrome rather than a log line, and stays one line because it prints at the
+ * top of every session.
  */
 export function buildAnnouncement(vault: Vault): string {
   const count = vault.size();
-  if (count === 0) return 'Edith connected - no memories yet';
-  return `Edith connected - ${count} memor${count === 1 ? 'y' : 'ies'}`;
+  const mark = '\u25c8'; // filled diamond - Edith's mark
+  const sep = '\u2009\u00b7\u2009'; // thin space, middot, thin space
+
+  if (count === 0) {
+    return `${mark} EDITH ONLINE${sep}no memories yet${sep}ready to capture`;
+  }
+
+  const noun = count === 1 ? 'memory' : 'memories';
+  return `${mark} EDITH ONLINE${sep}${count} ${noun} indexed${sep}recall ready`;
 }
 
 /**
