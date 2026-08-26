@@ -2,15 +2,43 @@
 """
 Rendered status for /edith.
 
-Plain text and box-drawing only - no ANSI, because this lands in a transcript
-rather than a terminal and escape codes would show up literally. Fixed width so
-the frame stays square in a proportional-font client as well as a monospace one.
+Plain text and box drawing only - no ANSI, because this lands in a transcript
+rather than a terminal and escape codes render literally.
+
+Deliberately has no right-hand border. An earlier framed version was 56 columns
+wide and got cut off in a narrow panel; a layout that only ever grows rightward
+degrades instead of breaking.
 """
 import json
 import urllib.request
 
 PORTS = (4319, 4320, 4321, 4322)
-W = 54  # inner width of the frame
+
+GLYPH = [
+    "   ╭──╮╭──╮ ",
+    "  ╭╯▪ ││ ▪╰╮",
+    "  │ ├─┤├─┤ │",
+    "  ╰╮▪ ││ ▪╭╯",
+    "   ╰──╯╰──╯ ",
+]
+
+# Memory count grows logarithmically: a brain of 3 notes and one of 300 are
+# different things, and a linear meter that fills at 5 conveys neither.
+MEMORY_TIERS = [1, 100, 500, 2500, 10000]
+# Session activity is small by nature, so it keeps a linear scale.
+BARS = 5
+
+
+def tiered(n, tiers=MEMORY_TIERS, width=BARS):
+    filled = sum(1 for t in tiers if n >= t)
+    return "▰" * filled + "▱" * (width - filled)
+
+
+def linear(done, total, width=BARS):
+    if total <= 0:
+        return "▱" * width
+    filled = min(width, round(done / total * width))
+    return "▰" * filled + "▱" * (width - filled)
 
 
 def get(path):
@@ -23,74 +51,53 @@ def get(path):
     return None, None
 
 
-def rule(left, right, label=""):
-    if label:
-        pad = W - len(label) - 2
-        return f"{left}─ {label} " + "─" * max(0, pad - 1) + right
-    return left + "─" * W + right
-
-
-def row(text=""):
-    return "│" + text.ljust(W) + "│"
-
-
-def field(key, value):
-    return row(f"  {key.ljust(12)}{value}")
-
-
-def meter(done, total, width=10):
-    if total <= 0:
-        return "▱" * width
-    filled = round((done / total) * width)
-    return "▰" * filled + "▱" * (width - filled)
+def render(rows):
+    """Glyph on the left, facts on the right. Pads so the columns line up."""
+    pad = max(len(line) for line in GLYPH) + 2
+    height = max(len(GLYPH), len(rows))
+    for i in range(height):
+        left = GLYPH[i] if i < len(GLYPH) else ""
+        right = rows[i] if i < len(rows) else ""
+        print((left.ljust(pad) + right).rstrip())
 
 
 def main():
     health, port = get("/health")
 
     if not health:
-        print(rule("╭", "╮", "◈ EDITH"))
-        print(row())
-        print(field("STATUS", "○ offline"))
-        print(row())
-        print(row("  The Edith app is not running, so Claude cannot"))
-        print(row("  reach your memories this session."))
-        print(row())
-        print(rule("╰", "╯"))
+        render([
+            "EDITH · second brain",
+            "",
+            "○ offline",
+            "",
+            "open the Edith app to restore recall",
+        ])
         return
 
-    stats, _ = get("/stats")
     notes = health.get("notes", 0)
+    stats, _ = get("/stats") or (None, None)
 
-    print(rule("╭", "╮", "◈ EDITH"))
-    print(row())
-    print(field("STATUS", f"● online   127.0.0.1:{port}"))
-    print(field("MEMORIES", f"{notes} indexed"))
-
+    here = 0
+    engaged = "▱" * BARS
+    engaged_label = "no sessions yet"
     if stats:
-        t = stats.get("totals", {})
-        recalled = t.get("searches", 0) + t.get("reads", 0)
-        formed = t.get("saves", 0)
+        per = stats.get("perSession") or []
+        if per:
+            here = per[0].get("searches", 0) + per[0].get("reads", 0)
         seen = stats.get("sessionsSeen", 0)
         used = stats.get("sessionsThatUsedBrain", 0)
+        if seen:
+            engaged = linear(used, seen)
+            engaged_label = f"{used}/{seen} sessions"
 
-        per = stats.get("perSession") or []
-        here = (per[0].get("searches", 0) + per[0].get("reads", 0)) if per else 0
-
-        print(row())
-        print(field("RECALLED", f"{meter(here, max(here, 5))}  {here} this session"))
-        print(field("FORMED", f"{formed} new"))
-        print(field("ENGAGED", f"{meter(used, seen)}  {used}/{seen} sessions"))
-        print(row())
-        print(field("", f"{recalled} recall(s) since Edith started"))
-
-    print(row())
-    print(rule("├", "┤"))
-    print(row())
-    print(row("  ▸ ask Claude anything about your past work"))
-    print(row('  ▸ "review my sessions and save what matters"'))
-    print(row())
-    print(rule("╰", "╯"))
+    render([
+        "EDITH · second brain",
+        "",
+        f"● online        :{port}",
+        f"memories  {tiered(notes)}  {notes}",
+        f"engaged   {engaged}  {engaged_label}",
+        f"recalled  {linear(here, max(here, 3))}  {here} here",
+    ])
 
 
 if __name__ == "__main__":
