@@ -200,9 +200,6 @@ function closeDetail(): void {
 /* ---------------- status ---------------- */
 
 function renderStatus(s: Status): void {
-  const sub = document.getElementById('stage-sub');
-  if (sub) sub.textContent = s.noteCount === 1 ? '1 memory' : `${s.noteCount} memories`;
-
   // The status block was removed from the sidebar; keep this as a no-op guard
   // so status pushes from the main process stay harmless.
   if (!document.getElementById('s-server')) return;
@@ -582,21 +579,6 @@ window.brain.onEvent((e) => {
 
   logActivity(e);
 });
-
-/* The nameplate recedes while the graph is being handled, so it reads as a
-   mark on the glass rather than a panel competing with the nodes. */
-{
-  const canvas = $<HTMLCanvasElement>('graph');
-  const title = $('stage-title');
-  let restore: number | undefined;
-  const recede = () => {
-    title.classList.add('dimmed');
-    window.clearTimeout(restore);
-    restore = window.setTimeout(() => title.classList.remove('dimmed'), 1400);
-  };
-  canvas.addEventListener('mousedown', recede);
-  canvas.addEventListener('wheel', recede, { passive: true });
-}
 
 window.brain.onStatus((s) => renderStatus(s));
 window.brain.onVaultChanged(() => void refreshAll());
