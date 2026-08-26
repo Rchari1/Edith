@@ -1,4 +1,6 @@
-# SecondBrain - v1 Design
+# Edith - v1 Design
+
+*Originally built as "SecondBrain"; renamed to Edith before release.*
 
 **Date:** 2026-08-25
 **Status:** Approved, implemented
@@ -7,7 +9,7 @@
 
 Every Claude session produces knowledge - decisions, gotchas, conventions, reasoning - and then loses it. The transcript survives on disk, but nothing reads it back. The next session starts cold.
 
-SecondBrain is a desktop app that ingests those sessions, distills them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain, the app's graph lights up to show which parts of your knowledge were used.
+Edith is a desktop app that ingests those sessions, distills them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain, the app's graph lights up to show which parts of your knowledge were used.
 
 ## Premise correction
 
@@ -26,7 +28,7 @@ One process serves both faces. The desktop app hosts the MCP server in-process, 
 
 ```
 Claude session ──MCP/HTTP──▶ ┌──────────────────────────┐
-                             │      SecondBrain.app     │
+                             │      Edith.app     │
                              │  ┌────────┐  ┌────────┐  │
                              │  │  MCP   │─▶│  graph │  │ node glows
                              │  │ server │  │   UI   │  │

@@ -42,6 +42,12 @@ declare global {
       reregister(): Promise<unknown>;
       deleteNote(id: string): Promise<boolean>;
       revealVault(): Promise<void>;
+      pickFiles(): Promise<string[]>;
+      importFiles(files: string[], mode: 'verbatim' | 'distill'): Promise<{
+        imported: number; skipped: number; failed: number;
+        results: Array<{ file: string; id?: string; status: string; detail?: string }>;
+      }>;
+      importText(title: string, body: string, mode: 'verbatim' | 'distill'): Promise<{ ids: string[] }>;
       openNoteFile(id: string): Promise<void>;
       onEvent(cb: (e: BrainEvent) => void): () => void;
       onStatus(cb: (s: Status) => void): () => void;
@@ -345,6 +351,109 @@ $('btn-backfill').addEventListener('click', async () => {
   }
 });
 
+/* ---------------- import ---------------- */
+
+let pendingFiles: string[] = [];
+
+function importMode(): 'verbatim' | 'distill' {
+  const checked = document.querySelector<HTMLInputElement>('input[name="imode"]:checked');
+  return checked?.value === 'distill' ? 'distill' : 'verbatim';
+}
+
+function importMessage(msg: string, kind: 'info' | 'good' | 'bad' = 'info'): void {
+  const el = $('import-msg');
+  el.textContent = msg;
+  el.className = `import-msg${kind === 'info' ? '' : ` ${kind}`}`;
+  el.classList.remove('hidden');
+}
+
+function renderPendingFiles(): void {
+  const box = $('import-files');
+  box.innerHTML = '';
+  if (pendingFiles.length === 0) {
+    box.classList.add('hidden');
+    return;
+  }
+  for (const f of pendingFiles) {
+    const row = document.createElement('div');
+    row.textContent = f.split('/').pop() ?? f;
+    box.appendChild(row);
+  }
+  box.classList.remove('hidden');
+}
+
+function resetImport(): void {
+  pendingFiles = [];
+  renderPendingFiles();
+  $<HTMLInputElement>('import-title').value = '';
+  $<HTMLTextAreaElement>('import-body').value = '';
+  $('import-msg').classList.add('hidden');
+  const verbatim = document.querySelector<HTMLInputElement>('input[name="imode"][value="verbatim"]');
+  if (verbatim) verbatim.checked = true;
+}
+
+$('btn-import').addEventListener('click', async () => {
+  resetImport();
+  // Distilling needs an API key; make that visible rather than failing later.
+  const status = await window.brain.status();
+  const distillLabel = document.querySelector<HTMLLabelElement>('.mode-choice label.row:nth-child(2)');
+  const distillInput = document.querySelector<HTMLInputElement>('input[name="imode"][value="distill"]');
+  if (distillInput) distillInput.disabled = !status.hasApiKey;
+  distillLabel?.classList.toggle('disabled', !status.hasApiKey);
+  if (!status.hasApiKey) importMessage('Add an API key in Settings to distill. Files can still be imported as written.');
+  $('import').classList.remove('hidden');
+});
+
+$('import-pick').addEventListener('click', async () => {
+  const files = await window.brain.pickFiles();
+  if (files.length) {
+    pendingFiles = files;
+    renderPendingFiles();
+    $('import-msg').classList.add('hidden');
+  }
+});
+
+$('import-cancel').addEventListener('click', () => $('import').classList.add('hidden'));
+
+$('import-go').addEventListener('click', async () => {
+  const btn = $<HTMLButtonElement>('import-go');
+  const title = $<HTMLInputElement>('import-title').value;
+  const body = $<HTMLTextAreaElement>('import-body').value;
+  const mode = importMode();
+
+  if (pendingFiles.length === 0 && !body.trim()) {
+    importMessage('Choose a file or paste some text first.', 'bad');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = mode === 'distill' ? 'Distilling…' : 'Adding…';
+  try {
+    const parts: string[] = [];
+    if (pendingFiles.length) {
+      const r = await window.brain.importFiles(pendingFiles, mode);
+      parts.push(`${r.imported} note(s) from ${pendingFiles.length} file(s)`);
+      if (r.skipped) parts.push(`${r.skipped} skipped`);
+      if (r.failed) parts.push(`${r.failed} failed`);
+    }
+    if (body.trim()) {
+      const r = await window.brain.importText(title, body, mode);
+      parts.push(`${r.ids.length} note(s) from pasted text`);
+    }
+    importMessage(`Added ${parts.join(', ')}.`, 'good');
+    pendingFiles = [];
+    renderPendingFiles();
+    $<HTMLTextAreaElement>('import-body').value = '';
+    $<HTMLInputElement>('import-title').value = '';
+    await refreshAll();
+  } catch (err) {
+    importMessage(err instanceof Error ? err.message : String(err), 'bad');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add to brain';
+  }
+});
+
 /* settings modal */
 $('btn-settings').addEventListener('click', async () => {
   const s = await window.brain.settings();
@@ -383,6 +492,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeDetail();
     $('settings').classList.add('hidden');
+    $('import').classList.add('hidden');
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
     e.preventDefault();

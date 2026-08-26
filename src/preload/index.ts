@@ -15,6 +15,11 @@ const api = {
   unregister: () => ipcRenderer.invoke('brain:unregister'),
   deleteNote: (id: string) => ipcRenderer.invoke('brain:delete-note', id),
   revealVault: () => ipcRenderer.invoke('brain:reveal-vault'),
+  pickFiles: () => ipcRenderer.invoke('brain:pick-files'),
+  importFiles: (files: string[], mode: 'verbatim' | 'distill') =>
+    ipcRenderer.invoke('brain:import-files', files, mode),
+  importText: (title: string, body: string, mode: 'verbatim' | 'distill') =>
+    ipcRenderer.invoke('brain:import-text', title, body, mode),
   openNoteFile: (id: string) => ipcRenderer.invoke('brain:open-note-file', id),
 
   onEvent: (cb: (e: unknown) => void) => {

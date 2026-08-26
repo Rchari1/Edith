@@ -35,7 +35,7 @@ export async function findFreePort(start = DEFAULT_PORT, attempts = 50): Promise
 }
 
 /**
- * The brain's MCP endpoint, hosted inside the desktop app.
+ * Edith's MCP endpoint, hosted inside the desktop app.
  *
  * Runs in stateless mode: each POST gets a fresh McpServer and transport.
  * That keeps concurrent Claude sessions from colliding on request ids, and
@@ -45,6 +45,7 @@ export class BrainServer {
   readonly bus = new BrainEventBus();
   private http: HttpServer | null = null;
   private boundPort: number | null = null;
+  private readonly callLog: Array<{ method: string; tool?: string; at: number }> = [];
 
   constructor(
     private readonly vault: Vault,
@@ -70,8 +71,15 @@ export class BrainServer {
       res.json({ ok: true, notes: this.vault.size(), port: this.boundPort });
     });
 
+    // Recent activity, for diagnosing "Claude is connected but nothing lit up".
+    // Distinguishes "no tool call arrived" from "a call arrived and matched nothing".
+    app.get('/events', (_req, res) => {
+      res.json({ calls: this.callLog.slice(-50), events: this.bus.recent(50) });
+    });
+
     app.post('/mcp', async (req, res) => {
-      const server = new McpServer({ name: 'secondbrain', version: '0.1.0' });
+      this.recordCall(req.body);
+      const server = new McpServer({ name: 'edith', version: '0.1.0' });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
       res.on('close', () => {
@@ -127,6 +135,25 @@ export class BrainServer {
       at: Date.now()
     });
     return port;
+  }
+
+  /** Record every inbound JSON-RPC call so we can tell silence from a miss. */
+  private recordCall(body: unknown): void {
+    const msgs = Array.isArray(body) ? body : [body];
+    for (const m of msgs) {
+      if (!m || typeof m !== 'object') continue;
+      const rpc = m as { method?: string; params?: { name?: string } };
+      if (!rpc.method) continue;
+      const entry = {
+        method: rpc.method,
+        ...(rpc.params?.name ? { tool: rpc.params.name } : {}),
+        at: Date.now()
+      };
+      this.callLog.push(entry);
+      if (this.callLog.length > 200) this.callLog.shift();
+      // eslint-disable-next-line no-console
+      console.log(`[mcp] ${entry.method}${entry.tool ? ` ${entry.tool}` : ''}`);
+    }
   }
 
   async stop(): Promise<void> {

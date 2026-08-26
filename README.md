@@ -1,11 +1,15 @@
-# SecondBrain
+<p align="center">
+  <img src="assets/icon.png" alt="Edith" width="132" height="132">
+</p>
 
-A second brain for Claude.
+<h1 align="center">Edith</h1>
 
-SecondBrain watches your Claude Code sessions, distills them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain during a session, the parts it used light up in the app.
+<p align="center"><strong>A second brain for Claude.</strong></p>
+
+Edith watches your Claude Code sessions, distils them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain during a session, the parts it used light up in the app.
 
 ```
-Claude session ──MCP──▶  SecondBrain.app  ──▶  the graph lights up
+Claude session ──MCP──▶      Edith.app      ──▶  the graph lights up
                               │
                               └── vault/notes/*.md
 ```
@@ -16,6 +20,7 @@ Claude session ──MCP──▶  SecondBrain.app  ──▶  the graph lights 
 - **Distills, doesn't archive.** An Opus 5 pass extracts durable concepts - decisions and their reasoning, gotchas, conventions - and skips narration. One note per idea, linked to related ideas.
 - **Serves Claude over MCP.** `search_brain`, `read_note`, `list_notes`, and `save_note`. Claude both reads from and writes to the brain mid-session.
 - **Shows you the retrieval.** A search dims-glows what Claude *considered*; opening a note brightly glows what it actually *used*. Highlights fade over 30 seconds.
+- **Takes your own content too.** **Add content** imports `.md`, `.markdown`, `.txt`, and `.mdx` files, or anything you paste. Files keep their existing frontmatter, so importing an Obsidian vault preserves ids and links instead of duplicating notes. Import as written, or distil into concepts.
 - **Plain Markdown.** Files on disk are the source of truth. Edit them in any editor. Delete the index and it rebuilds.
 
 ## Install
@@ -27,7 +32,7 @@ npm install
 npm run dev
 ```
 
-On first launch the app starts its MCP server on `127.0.0.1:4319` and registers itself with every Claude surface it finds - one user-scope entry in `~/.claude.json` covers the Claude Code CLI, the VS Code extension, and all your projects. Restart Claude Code and the brain is available.
+On first launch Edith starts its MCP server on `127.0.0.1:4319` and registers itself with every Claude surface it finds - one user-scope entry in `~/.claude.json` covers the Claude Code CLI, the VS Code extension, and all your projects. Restart Claude Code and the brain is available.
 
 Add your Anthropic API key in **Settings** (or export `ANTHROPIC_API_KEY`) to enable distillation, then press **Backfill** to ingest the sessions already on disk. Without a key the app still runs - search and `save_note` work, only automatic distillation pauses.
 
@@ -35,6 +40,12 @@ To build a distributable `.dmg`:
 
 ```bash
 npm run dist
+```
+
+The app icon is generated from `assets/logo.svg` - Electron itself does the rasterising, so no cairo or rsvg toolchain is needed:
+
+```bash
+npm run icon
 ```
 
 ## How it works
@@ -48,7 +59,18 @@ npm run dist
 | **Serve** | In-process MCP server over local HTTP |
 | **Light up** | Every tool call emits an event straight to the renderer |
 
-The app hosts the MCP server *itself* rather than spawning it. That is what makes the highlighting instant: a tool call and the glow are the same tick.
+Edith hosts the MCP server *itself* rather than spawning it. That is what makes the highlighting instant: a tool call and the glow are the same tick.
+
+### Adding your own content
+
+**Add content** in the sidebar opens an import dialog with two modes:
+
+| Mode | What it does | Cost |
+|---|---|---|
+| Keep as written | Stores the file or text verbatim as a note | free |
+| Distil into concepts | Runs the same extraction used on sessions | one API call |
+
+Re-importing a file **deepens** the existing note rather than creating a duplicate, so syncing a folder repeatedly is safe. A file with broken frontmatter loses its metadata, not its content.
 
 ### Note format
 
@@ -73,9 +95,12 @@ Every note records the sessions it came from. That provenance is written from da
 
 ## Things worth knowing
 
-**An API key does not give access to claude.ai history.** The Messages API is stateless; there is no endpoint listing past conversations. SecondBrain reads Claude Code's local transcripts. The API key is used only to distill them.
+**Upgrading from the old name.** Edith was previously called SecondBrain. On first launch it copies your existing vault and settings across from the old location, and replaces the stale `secondbrain` entry in `~/.claude.json` with `edith` so Claude does not see two identical tool sets. The old directory is left untouched as a fallback.
 
-**Most `.jsonl` files under `~/.claude/projects` are not sessions.** Subagent and workflow transcripts nest under session directories and typically outnumber real sessions by roughly 9:1. SecondBrain classifies by path shape so they never become notes.
+
+**An API key does not give access to claude.ai history.** The Messages API is stateless; there is no endpoint listing past conversations. Edith reads Claude Code's local transcripts. The API key is used only to distill them.
+
+**Most `.jsonl` files under `~/.claude/projects` are not sessions.** Subagent and workflow transcripts nest under session directories and typically outnumber real sessions by roughly 9:1. Edith classifies by path shape so they never become notes.
 
 **Transcripts are trees.** Interrupting Claude forks the history and leaves the abandoned branch in the file. The parser walks back from `last-prompt.leafUuid` so only what actually happened gets distilled.
 

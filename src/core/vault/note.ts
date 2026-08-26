@@ -13,6 +13,17 @@ export function slugify(input: string): string {
   return slug || 'untitled';
 }
 
+/**
+ * YAML parses an unquoted `2026-08-25` into a Date, not a string. Without this
+ * coercion the `typeof === 'string'` guard fails and the note's real creation
+ * date is silently replaced with today's on every reload.
+ */
+function asDateString(v: unknown, fallback: string): string {
+  if (typeof v === 'string' && v.trim()) return v.trim().slice(0, 10);
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  return fallback;
+}
+
 function asStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v.filter((x): x is string => typeof x === 'string');
@@ -28,7 +39,7 @@ function asSources(v: unknown): NoteSource[] {
       out.push({
         session: s.session,
         project: typeof s.project === 'string' ? s.project : '',
-        at: typeof s.at === 'string' ? s.at : ''
+        at: typeof s.at === 'string' ? s.at : s.at instanceof Date ? s.at.toISOString() : ''
       });
     }
   }
@@ -46,8 +57,8 @@ export function parseNote(raw: string, filePath: string, fallbackId: string): No
     id: typeof d.id === 'string' && d.id ? d.id : fallbackId,
     title: typeof d.title === 'string' && d.title ? d.title : fallbackId,
     type: 'concept',
-    created: typeof d.created === 'string' ? d.created : now,
-    updated: typeof d.updated === 'string' ? d.updated : now,
+    created: asDateString(d.created, now),
+    updated: asDateString(d.updated, now),
     sources: asSources(d.sources),
     links: asStringArray(d.links),
     origin: origin === 'claude' || origin === 'human' || origin === 'distilled' ? origin : 'human',
@@ -64,8 +75,8 @@ export function serializeNote(note: Note): string {
   lines.push(`id: ${f.id}`);
   lines.push(`title: ${yamlScalar(f.title)}`);
   lines.push(`type: ${f.type}`);
-  lines.push(`created: ${f.created}`);
-  lines.push(`updated: ${f.updated}`);
+  lines.push(`created: '${f.created}'`);
+  lines.push(`updated: '${f.updated}'`);
   lines.push(`origin: ${f.origin}`);
 
   if (f.tags?.length) lines.push(`tags: [${f.tags.map(yamlScalar).join(', ')}]`);

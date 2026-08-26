@@ -7,3 +7,6 @@ dist/
 .env
 .vault-test/
 coverage/
+
+# Intermediate icon renders - regenerate with `npm run icon`
+assets/icon.iconset/

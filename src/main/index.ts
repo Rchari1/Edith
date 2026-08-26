@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } from 'electron';
 import path from 'node:path';
 import { AppState } from './app-state.js';
 import { registerAll, unregisterAll } from '../core/onboarding/register.js';
+import { IMPORTABLE_EXTENSIONS } from '../core/importer/index.js';
+import { migrateLegacyUserData } from './migrate.js';
 import type { BrainEvent } from '../core/types.js';
 
 
@@ -15,6 +17,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0b0d12',
+    title: 'Edith',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
     webPreferences: {
@@ -95,6 +98,36 @@ function registerIpc(appState: AppState): void {
     return ok;
   });
 
+  ipcMain.handle('brain:pick-files', async () => {
+    if (!win) return [];
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Add files to your brain',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Notes and text', extensions: IMPORTABLE_EXTENSIONS.map((e) => e.slice(1)) },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle('brain:import-files', async (_e, files: string[], mode: 'verbatim' | 'distill') => {
+    const summary = await appState.importPaths(files, mode);
+    send('brain:vault-changed', null);
+    send('brain:status', appState.status());
+    return summary;
+  });
+
+  ipcMain.handle(
+    'brain:import-text',
+    async (_e, title: string, body: string, mode: 'verbatim' | 'distill') => {
+      const result = await appState.importPastedText(title, body, mode);
+      send('brain:vault-changed', null);
+      send('brain:status', appState.status());
+      return result;
+    }
+  );
+
   ipcMain.handle('brain:reveal-vault', () => {
     void shell.openPath(appState.settings.vaultPath);
   });
@@ -105,33 +138,80 @@ function registerIpc(appState: AppState): void {
   });
 }
 
-void app.whenReady().then(async () => {
-  win = createWindow();
+// A second copy would run a second watcher over the same transcripts and
+// distill every session twice - double API spend - while binding a different
+// port and rewriting the MCP config to point at it. Everything below must be
+// gated on holding the lock: calling app.quit() alone does NOT stop whenReady
+// from firing, so an unguarded second instance still clobbers the config on
+// its way out.
+// Without this the menu bar and dock read "Electron" whenever the app is run
+// from source rather than from a packaged bundle.
+app.setName('Edith');
 
-  state = new AppState(app.getPath('userData'));
-  state.on('event', (event: BrainEvent) => {
-    send('brain:event', event);
-    if (event.type === 'saved') send('brain:vault-changed', null);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+/** In development there is no bundle to read the icon from, so set it explicitly. */
+function applyDockIcon(): void {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const iconPath = path.join(__dirname, '../../assets/icon.png');
+  const image = nativeImage.createFromPath(iconPath);
+  if (!image.isEmpty()) app.dock.setIcon(image);
+}
+
+function start(): void {
+  app.on('second-instance', () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
   });
-  state.on('vault-changed', () => send('brain:vault-changed', null));
 
-  try {
-    await state.start();
-    registerIpc(state);
-    send('brain:status', state.status());
-  } catch (err) {
-    send('brain:event', {
-      type: 'status',
-      message: `Startup failed: ${err instanceof Error ? err.message : String(err)}`,
-      level: 'error',
-      at: Date.now()
+  void app.whenReady().then(async () => {
+    applyDockIcon();
+    win = createWindow();
+
+    state = new AppState(app.getPath('userData'));
+    state.on('event', (event: BrainEvent) => {
+      send('brain:event', event);
+      if (event.type === 'saved') send('brain:vault-changed', null);
     });
-  }
+    state.on('vault-changed', () => send('brain:vault-changed', null));
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) win = createWindow();
+    try {
+      // Renaming the product moved userData; bring a prior install's vault and
+      // settings across before anything reads from the new location.
+      const migration = await migrateLegacyUserData(app.getPath('userData'));
+      if (migration.migrated) {
+        send('brain:event', {
+          type: 'status',
+          message: `Brought ${migration.items.join(' and ')} across from your previous install`,
+          level: 'info',
+          at: Date.now()
+        });
+      }
+
+      await state.start();
+      registerIpc(state);
+      send('brain:status', state.status());
+    } catch (err) {
+      send('brain:event', {
+        type: 'status',
+        message: `Startup failed: ${err instanceof Error ? err.message : String(err)}`,
+        level: 'error',
+        at: Date.now()
+      });
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) win = createWindow();
+    });
   });
-});
+}
+
+if (hasSingleInstanceLock) start();
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

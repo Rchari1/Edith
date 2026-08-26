@@ -8,6 +8,8 @@ import { SessionWatcher } from '../core/watcher/index.js';
 import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
 import { registerAll, type RegistrationResult } from '../core/onboarding/register.js';
+import { importFiles, importText, type ImportSummary } from '../core/importer/index.js';
+import fs from 'node:fs/promises';
 import { loadSettings, saveSettings, resolveApiKey, type Settings } from './settings.js';
 import type { BrainEvent, Session } from '../core/types.js';
 import type { Graph } from '../core/vault/vault.js';
@@ -35,6 +37,7 @@ export class AppState extends EventEmitter {
   server!: BrainServer;
   watcher!: SessionWatcher;
   queue: DistillQueue | null = null;
+  distiller: Distiller | null = null;
   registrations: RegistrationResult[] = [];
 
   private settingsFile: string;
@@ -89,13 +92,14 @@ export class AppState extends EventEmitter {
     });
     await this.watcher.start();
 
-    this.push({ type: 'status', message: 'SecondBrain ready', level: 'info', at: Date.now() });
+    this.push({ type: 'status', message: 'Edith ready', level: 'info', at: Date.now() });
   }
 
   /** Rebuild the distill queue, e.g. after the API key or model changes. */
   private buildQueue(): void {
     this.queue?.stop();
     this.queue = null;
+    this.distiller = null;
 
     const apiKey = resolveApiKey(this.settings);
     if (!apiKey) {
@@ -113,6 +117,7 @@ export class AppState extends EventEmitter {
       model: this.settings.model,
       minTurns: this.settings.minTurns
     });
+    this.distiller = distiller;
     const queue = new DistillQueue(distiller);
 
     queue.on('done', (result: { noteIds: string[]; skipped: boolean }) => {
@@ -181,6 +186,84 @@ export class AppState extends EventEmitter {
     }
   }
 
+  /**
+   * Bring outside content into the brain.
+   *
+   * 'verbatim' keeps the user's own writing exactly as-is - importing an
+   * Obsidian vault should not rewrite it. 'distill' runs the same extraction
+   * used on sessions, for raw material like meeting notes or docs.
+   */
+  async importPaths(files: string[], mode: 'verbatim' | 'distill'): Promise<ImportSummary> {
+    if (mode === 'verbatim' || !this.distiller) {
+      if (mode === 'distill' && !this.distiller) {
+        this.push({
+          type: 'status',
+          message: 'No API key - imported files as-is instead of distilling.',
+          level: 'warn',
+          at: Date.now()
+        });
+      }
+      const summary = await importFiles(this.vault, files);
+      this.reportImport(summary.imported, summary.failed);
+      return summary;
+    }
+
+    const results: ImportSummary['results'] = [];
+    for (const file of files) {
+      try {
+        const raw = await fs.readFile(file, 'utf8');
+        const label = file.split('/').pop() ?? file;
+        const result = await this.distiller.distillText(label, raw);
+        if (result.skipped) {
+          results.push({ file, status: 'skipped', detail: result.reason });
+        } else {
+          for (const id of result.noteIds) results.push({ file, id, status: 'imported' });
+        }
+      } catch (err) {
+        results.push({ file, status: 'failed', detail: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    const summary: ImportSummary = {
+      imported: results.filter((r) => r.status === 'imported').length,
+      skipped: results.filter((r) => r.status === 'skipped').length,
+      failed: results.filter((r) => r.status === 'failed').length,
+      results
+    };
+    this.reportImport(summary.imported, summary.failed);
+    return summary;
+  }
+
+  async importPastedText(
+    title: string,
+    body: string,
+    mode: 'verbatim' | 'distill'
+  ): Promise<{ ids: string[] }> {
+    if (mode === 'distill' && this.distiller) {
+      const result = await this.distiller.distillText(title || 'Pasted text', body);
+      this.reportImport(result.noteIds.length, 0);
+      if (result.skipped && result.noteIds.length === 0) {
+        throw new Error(result.reason ?? 'Nothing durable found in that text.');
+      }
+      return { ids: result.noteIds };
+    }
+    const { id } = await importText(this.vault, title, body);
+    this.reportImport(1, 0);
+    return { ids: [id] };
+  }
+
+  private reportImport(imported: number, failed: number): void {
+    this.push({
+      type: 'status',
+      message: failed
+        ? `Imported ${imported} note(s), ${failed} failed`
+        : `Imported ${imported} note(s)`,
+      level: failed ? 'warn' : 'info',
+      at: Date.now()
+    });
+    this.emit('vault-changed');
+  }
+
   async updateSettings(patch: Partial<Settings>): Promise<Settings> {
     const needsQueueRebuild =
       ('apiKey' in patch && patch.apiKey !== this.settings.apiKey) ||
@@ -211,7 +294,10 @@ export class AppState extends EventEmitter {
   }
 
   private push(event: BrainEvent): void {
-    this.server?.bus.emitEvent(event) ?? this.emit('event', event);
+    // emitEvent returns void, so `??` here always fired the fallback too and
+    // every status event reached the renderer twice.
+    if (this.server) this.server.bus.emitEvent(event);
+    else this.emit('event', event);
   }
 
   async stop(): Promise<void> {
