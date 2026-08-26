@@ -35,6 +35,17 @@ function asSources(v: unknown): NoteSource[] {
   return out;
 }
 
+/**
+ * A frontmatter date, whatever YAML made of it. Unquoted dates parse as Date
+ * objects - treating those as invalid silently rewrote every note's dates to
+ * "today" on reload.
+ */
+function asDateString(v: unknown): string | null {
+  if (typeof v === 'string' && v) return v;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  return null;
+}
+
 /** Parse a note file. Tolerates hand-edited frontmatter with missing or wrong-typed fields. */
 export function parseNote(raw: string, filePath: string, fallbackId: string): Note {
   const parsed = matter(raw);
@@ -46,8 +57,8 @@ export function parseNote(raw: string, filePath: string, fallbackId: string): No
     id: typeof d.id === 'string' && d.id ? d.id : fallbackId,
     title: typeof d.title === 'string' && d.title ? d.title : fallbackId,
     type: 'concept',
-    created: typeof d.created === 'string' ? d.created : now,
-    updated: typeof d.updated === 'string' ? d.updated : now,
+    created: asDateString(d.created) ?? now,
+    updated: asDateString(d.updated) ?? now,
     sources: asSources(d.sources),
     links: asStringArray(d.links),
     origin: origin === 'claude' || origin === 'human' || origin === 'distilled' ? origin : 'human',
@@ -64,8 +75,9 @@ export function serializeNote(note: Note): string {
   lines.push(`id: ${f.id}`);
   lines.push(`title: ${yamlScalar(f.title)}`);
   lines.push(`type: ${f.type}`);
-  lines.push(`created: ${f.created}`);
-  lines.push(`updated: ${f.updated}`);
+  // Quoted so YAML reads them back as strings, not Date objects.
+  lines.push(`created: '${f.created}'`);
+  lines.push(`updated: '${f.updated}'`);
   lines.push(`origin: ${f.origin}`);
 
   if (f.tags?.length) lines.push(`tags: [${f.tags.map(yamlScalar).join(', ')}]`);
