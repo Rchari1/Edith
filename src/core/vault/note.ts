@@ -75,6 +75,7 @@ export function serializeNote(note: Note): string {
   lines.push(`id: ${f.id}`);
   lines.push(`title: ${yamlScalar(f.title)}`);
   lines.push(`type: ${f.type}`);
+  // Quoted so YAML reads them back as strings, not Date objects.
   lines.push(`created: '${f.created}'`);
   lines.push(`updated: '${f.updated}'`);
   lines.push(`origin: ${f.origin}`);
