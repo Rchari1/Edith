@@ -87,6 +87,7 @@ export type BrainEvent =
   | { type: 'opened'; noteIds: string[]; at: number }
   | { type: 'saved'; noteIds: string[]; at: number }
   | { type: 'vault-changed'; at: number }
+  | { type: 'session-active'; sessionId: string; project: string; at: number }
   | { type: 'ingest-progress'; done: number; total: number; label: string; at: number }
   | { type: 'status'; message: string; level: 'info' | 'warn' | 'error'; at: number };
 
