@@ -148,6 +148,14 @@ function registerIpc(appState: AppState): void {
 // from source rather than from a packaged bundle.
 app.setName('Edith');
 
+// The macOS About panel otherwise falls back to the framework's own name.
+app.setAboutPanelOptions({
+  applicationName: 'Edith',
+  applicationVersion: app.getVersion(),
+  copyright: 'A second brain for Claude',
+  credits: 'Local notes, distilled from your Claude sessions.'
+});
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {

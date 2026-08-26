@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Vault } from '../vault/vault.js';
 import { BrainEventBus } from './events.js';
 import { registerBrainTools } from './tools.js';
+import type { SessionSource } from '../sessions/source.js';
 
 export const DEFAULT_PORT = 4319;
 
@@ -49,7 +50,8 @@ export class BrainServer {
 
   constructor(
     private readonly vault: Vault,
-    private readonly opts: BrainServerOptions = {}
+    private readonly opts: BrainServerOptions = {},
+    private readonly sessions?: SessionSource
   ) {}
 
   get port(): number | null {
@@ -88,7 +90,7 @@ export class BrainServer {
       });
 
       try {
-        registerBrainTools(server, this.vault, this.bus);
+        registerBrainTools(server, this.vault, this.bus, this.sessions);
         await server.connect(transport);
         await transport.handleRequest(req, res, req.body);
       } catch (err) {

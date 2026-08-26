@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Vault } from '../vault/vault.js';
 import type { SearchHit, NoteFrontmatter } from '../types.js';
 import type { BrainEventBus } from './events.js';
+import type { SessionSource } from '../sessions/source.js';
 
 function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }] };
@@ -51,7 +52,12 @@ function tidy(snippet: string): string {
  * matters too - it is what the user sees in their transcript, so it is laid
  * out to be scannable rather than dumped as prose.
  */
-export function registerBrainTools(server: McpServer, vault: Vault, bus: BrainEventBus): void {
+export function registerBrainTools(
+  server: McpServer,
+  vault: Vault,
+  bus: BrainEventBus,
+  sessions?: SessionSource
+): void {
   server.registerTool(
     'search_brain',
     {
@@ -205,6 +211,65 @@ export function registerBrainTools(server: McpServer, vault: Vault, bus: BrainEv
       if (f.links.length) lines.push(`    linked ${ARROW} ${f.links.join(` ${DOT} `)}`);
       lines.push(`    ${vault.size()} note(s) in the brain`);
       return text(lines.join('\n'));
+    }
+  );
+
+  // Session review. Edith holds no API key of its own - when the user asks
+  // Claude to go through past sessions, the reading and the judgement happen
+  // inside their own Claude session, and Claude writes the results back with
+  // save_note. These two tools are what make that possible.
+  if (!sessions) return;
+
+  server.registerTool(
+    'list_sessions',
+    {
+      title: `${MARK} List past Claude sessions`,
+      description:
+        'List the Claude Code sessions on this machine, newest first, marking which ones have already been captured into the brain. ' +
+        'Use when the user asks you to review, catch up on, or mine their past sessions for anything worth remembering.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).optional().describe('Default 20'),
+        unsaved_only: z.boolean().optional().describe('Only sessions not yet captured (default false)')
+      }
+    },
+    async ({ limit, unsaved_only }) => {
+      const list = await sessions.list(limit ?? 20, unsaved_only ?? false);
+      if (list.length === 0) {
+        return text(`${header('no sessions found')}\n\n  Nothing on disk matches.`);
+      }
+
+      const idW = Math.min(10, Math.max(...list.map((s) => s.id.length)));
+      const rows = list
+        .map((s) => {
+          const glyph = s.captured ? ORIGIN_GLYPH.distilled : ORIGIN_GLYPH.human;
+          const title = s.title ?? '(untitled)';
+          const when = s.startedAt ? s.startedAt.slice(0, 10) : '';
+          const proj = s.project.replace(/^-Users-[^-]+-?/, '') || 'home';
+          return `  ${glyph} ${s.id.slice(0, idW)}  ${title}\n       ${when} ${DOT} ${proj} ${DOT} ${s.turns} turns${s.captured ? ` ${DOT} already captured` : ''}`;
+        })
+        .join('\n\n');
+
+      const pending = list.filter((s) => !s.captured).length;
+      return text(
+        `${header(`${list.length} session(s), ${pending} not yet captured`)}\n\n${rows}\n\n  read_session <id> to read one, then save_note what is worth keeping.`
+      );
+    }
+  );
+
+  server.registerTool(
+    'read_session',
+    {
+      title: `${MARK} Read a past session`,
+      description:
+        'Read the transcript of one past Claude session, with tool noise stripped. ' +
+        'Use after list_sessions to review what happened, then call save_note for anything durable - a decision and its reasoning, ' +
+        'a gotcha that cost real time, a convention adopted. Do not save narration of what happened.',
+      inputSchema: { id: z.string().describe('Session id from list_sessions. A prefix is enough.') }
+    },
+    async ({ id }) => {
+      const transcript = await sessions.read(id);
+      if (!transcript) return text(`${header(`no session "${id}"`)}\n\n  Try list_sessions.`);
+      return text(`${header(`session ${id.slice(0, 8)}`)}\n\n  ${RULE}\n\n${transcript}`);
     }
   );
 }

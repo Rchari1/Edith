@@ -73,7 +73,7 @@
           <div class="status-row"><span class="k">Queue</span><span class="v" id="s-queue">idle</span></div>
           <div class="actions">
             <button id="btn-import" class="primary" title="Add your own files or text">Add content</button>
-            <button id="btn-backfill" title="Ingest sessions already on disk">Backfill</button>
+            <button id="btn-backfill" title="Requires an API key. Otherwise ask Claude to review your sessions.">Backfill</button>
           </div>
           <div class="actions">
             <button id="btn-vault" title="Open the vault folder">Vault</button>
@@ -86,7 +86,9 @@
         <canvas id="graph"></canvas>
         <div id="empty" class="empty hidden">
           <h2>The brain is empty</h2>
-          <p>Run <strong>Backfill</strong> to distill the Claude sessions already on this machine, or just keep working &mdash; new sessions are ingested automatically.</p>
+          <p>Ask Claude to fill it. In any Claude session, try:</p>
+          <p class="empty-quote">&ldquo;Review my recent sessions and save anything worth keeping to my second brain.&rdquo;</p>
+          <p>Claude reads the transcripts and writes the notes itself &mdash; no API key needed. Or use <strong>Add content</strong> to bring in files you already have.</p>
         </div>
         <div id="legend" class="legend">
           <span><i class="dot considered"></i>considered</span>
@@ -143,13 +145,19 @@
       <section id="settings" class="modal hidden">
         <div class="modal-card">
           <h2>Settings</h2>
-          <label>Anthropic API key
-            <input id="set-key" type="password" placeholder="sk-ant-..." />
-            <small>Used only to distill sessions into notes. Stored locally. Falls back to <code>ANTHROPIC_API_KEY</code>.</small>
-          </label>
-          <label>Model <input id="set-model" type="text" /></label>
-          <label>Minimum turns to distill <input id="set-minturns" type="number" min="1" max="50" /></label>
-          <label class="row"><input id="set-auto" type="checkbox" /> Distill new sessions automatically</label>
+          <p class="settings-note">Edith needs no API key. Claude reads and writes your notes through its own session, on your existing plan.</p>
+
+          <details class="advanced">
+            <summary>Advanced &mdash; automatic background distilling</summary>
+            <p class="settings-note">Optional. Lets Edith distil finished sessions on its own using an Anthropic API key, billed separately from your Claude plan. Most people should leave this empty and just ask Claude instead.</p>
+            <label>Anthropic API key
+              <input id="set-key" type="password" placeholder="sk-ant-..." />
+              <small>Stored locally. Falls back to <code>ANTHROPIC_API_KEY</code>.</small>
+            </label>
+            <label>Model <input id="set-model" type="text" /></label>
+            <label>Minimum turns to distil <input id="set-minturns" type="number" min="1" max="50" /></label>
+            <label class="row"><input id="set-auto" type="checkbox" /> Distil new sessions automatically</label>
+          </details>
           <div class="modal-actions">
             <button id="set-cancel">Cancel</button>
             <button id="set-save" class="primary">Save</button>

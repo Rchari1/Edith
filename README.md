@@ -6,7 +6,7 @@
 
 <p align="center"><strong>A second brain for Claude.</strong></p>
 
-Edith watches your Claude Code sessions, distils them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain during a session, the parts it used light up in the app.
+Edith is a local, plain-Markdown knowledge base that Claude can read from and write to. Ask Claude to review your past sessions and it distils them into linked notes itself - no API key, no account, no inference of its own. When Claude consults the brain during a session, the parts it used light up in the app.
 
 ```
 Claude session ──MCP──▶      Edith.app      ──▶  the graph lights up
@@ -16,8 +16,8 @@ Claude session ──MCP──▶      Edith.app      ──▶  the graph light
 
 ## What it does
 
-- **Ingests automatically.** Watches `~/.claude/projects` and picks up sessions as they finish. Your existing transcripts backfill on demand.
-- **Distills, doesn't archive.** An Opus 5 pass extracts durable concepts - decisions and their reasoning, gotchas, conventions - and skips narration. One note per idea, linked to related ideas.
+- **No API key. No account. No inference.** Claude reads and writes your notes through its own session, on the plan you already pay for. Edith is the store and the canvas.
+- **Claude fills it for you.** Ask *"review my recent sessions and save anything worth keeping"* and Claude reads your transcripts with `list_sessions` / `read_session`, then writes the notes back with `save_note`.
 - **Serves Claude over MCP.** `search_brain`, `read_note`, `list_notes`, and `save_note`. Claude both reads from and writes to the brain mid-session.
 - **Shows you the retrieval.** A search dims-glows what Claude *considered*; opening a note brightly glows what it actually *used*. Highlights fade over 30 seconds.
 - **Takes your own content too.** **Add content** imports `.md`, `.markdown`, `.txt`, and `.mdx` files, or anything you paste. Files keep their existing frontmatter, so importing an Obsidian vault preserves ids and links instead of duplicating notes. Import as written, or distil into concepts.
@@ -34,7 +34,9 @@ npm run dev
 
 On first launch Edith starts its MCP server on `127.0.0.1:4319` and registers itself with every Claude surface it finds - one user-scope entry in `~/.claude.json` covers the Claude Code CLI, the VS Code extension, and all your projects. Restart Claude Code and the brain is available.
 
-Add your Anthropic API key in **Settings** (or export `ANTHROPIC_API_KEY`) to enable distillation, then press **Backfill** to ingest the sessions already on disk. Without a key the app still runs - search and `save_note` work, only automatic distillation pauses.
+That's the whole setup. There is no account and no API key: ask Claude to review your sessions and it fills the brain itself.
+
+Optionally, **Settings -> Advanced** enables background distilling, where Edith distils finished sessions on its own using an Anthropic API key. That key bills separately from your Claude plan, so most people should leave it empty.
 
 To build a distributable `.dmg`:
 
@@ -54,10 +56,22 @@ npm run icon
 |---|---|
 | **Watch** | `chokidar` on `~/.claude/projects`, waiting for a session to go quiet |
 | **Parse** | JSONL to a canonical `Session`, following `leafUuid` to skip abandoned branches |
-| **Distill** | One Opus 5 call per session, structured output, retrying queue |
 | **Store** | Markdown + YAML frontmatter, indexed in SQLite FTS5 |
 | **Serve** | In-process MCP server over local HTTP |
 | **Light up** | Every tool call emits an event straight to the renderer |
+
+### Tools Claude gets
+
+| Tool | What it does |
+|---|---|
+| `search_brain` | Search the notes |
+| `read_note` | Read one note in full |
+| `list_notes` | See what the brain holds |
+| `save_note` | Write an insight back |
+| `list_sessions` | See past Claude sessions, and which are already captured |
+| `read_session` | Read one transcript, tool noise stripped |
+
+The last two are what let Claude do the distilling itself, on your plan, with no key anywhere.
 
 Edith hosts the MCP server *itself* rather than spawning it. That is what makes the highlighting instant: a tool call and the glow are the same tick.
 
