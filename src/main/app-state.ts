@@ -6,6 +6,7 @@ import { SqliteSearchProvider } from '../core/vault/search.js';
 import { BrainServer, findFreePort } from '../core/mcp/server.js';
 import { SessionWatcher } from '../core/watcher/index.js';
 import { WatcherSessionSource } from '../core/sessions/source.js';
+import { createThrottle } from '../core/util/throttle.js';
 import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
 import { registerAll, type RegistrationResult } from '../core/onboarding/register.js';
@@ -43,6 +44,8 @@ export class AppState extends EventEmitter {
 
   private settingsFile: string;
   private backfilling = false;
+  /** A busy transcript writes constantly; surface at most one heartbeat per session per 1.5s. */
+  private readonly activityThrottle = createThrottle(1500);
 
   constructor(private readonly userDataDir: string) {
     super();
@@ -85,6 +88,15 @@ export class AppState extends EventEmitter {
     }
 
     this.buildQueue();
+
+    // A live session writes to its transcript constantly. Surface that as a
+    // heartbeat so the app visibly reacts while Claude is working, even when
+    // the brain itself is not being queried - but throttle it hard.
+    this.watcher.on('activity', ({ sessionId, file }: { sessionId: string; file: string }) => {
+      if (!this.activityThrottle(sessionId)) return;
+      const project = path.basename(path.dirname(file));
+      this.push({ type: 'session-active', sessionId, project, at: Date.now() });
+    });
 
     this.watcher.on('session-settled', (session: Session) => {
       this.push({ type: 'status', message: `Session settled: ${session.title ?? session.id.slice(0, 8)}`, level: 'info', at: Date.now() });

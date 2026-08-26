@@ -24,6 +24,7 @@ type BrainEvent =
   | { type: 'opened'; noteIds: string[]; at: number }
   | { type: 'saved'; noteIds: string[]; at: number }
   | { type: 'vault-changed'; at: number }
+  | { type: 'session-active'; sessionId: string; project: string; at: number }
   | { type: 'ingest-progress'; done: number; total: number; label: string; at: number }
   | { type: 'status'; message: string; level: 'info' | 'warn' | 'error'; at: number };
 
@@ -231,6 +232,21 @@ function renderStatus(s: Status): void {
   }
 }
 
+/* ---------------- live session heartbeat ---------------- */
+
+let liveTimer: number | undefined;
+
+/** Show that Claude is working right now. Clears itself once writes stop. */
+function showLive(project: string): void {
+  const row = $('s-live');
+  const label = project.replace(/^-Users-[^-]+-?/, '') || 'home';
+  $('s-live-text').textContent = `Claude is working in ${label}`;
+  row.classList.remove('hidden');
+
+  window.clearTimeout(liveTimer);
+  liveTimer = window.setTimeout(() => row.classList.add('hidden'), 12000);
+}
+
 /* ---------------- activity ---------------- */
 
 function logActivity(e: BrainEvent): void {
@@ -250,6 +266,10 @@ function logActivity(e: BrainEvent): void {
     case 'saved':
       cls = 'ev-saved';
       text = `saved ${e.noteIds.join(', ')}`;
+      break;
+    case 'session-active':
+      cls = 'ev-opened';
+      text = `Claude is working in ${e.project.replace(/^-Users-[^-]+-?/, '') || 'home'}`;
       break;
     case 'ingest-progress':
       text = `${e.label} ${e.done}/${e.total}`;
@@ -482,6 +502,7 @@ window.brain.onEvent((e) => {
   if (e.type === 'considered') graph.activate(e.noteIds, 'considered');
   else if (e.type === 'opened') graph.activate(e.noteIds, 'opened');
   else if (e.type === 'saved') graph.activate(e.noteIds, 'saved');
+  else if (e.type === 'session-active') showLive(e.project);
   logActivity(e);
 });
 
