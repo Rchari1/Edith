@@ -10,6 +10,7 @@ import { createThrottle } from '../core/util/throttle.js';
 import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
 import { registerAll, type RegistrationResult } from '../core/onboarding/register.js';
+import { registerSessionHook, type HookResult } from '../core/onboarding/hooks.js';
 import { importFiles, importText, type ImportSummary } from '../core/importer/index.js';
 import fs from 'node:fs/promises';
 import { loadSettings, saveSettings, resolveApiKey, type Settings } from './settings.js';
@@ -41,6 +42,7 @@ export class AppState extends EventEmitter {
   queue: DistillQueue | null = null;
   distiller: Distiller | null = null;
   registrations: RegistrationResult[] = [];
+  hookRegistration: HookResult | null = null;
 
   private settingsFile: string;
   private backfilling = false;
@@ -85,6 +87,21 @@ export class AppState extends EventEmitter {
           at: Date.now()
         });
       }
+    }
+
+    // A SessionStart hook injects a primer describing the brain. Without it,
+    // Claude only learns Edith exists once it is already considering a tool -
+    // which is the moment it needs prompting, not after.
+    this.hookRegistration = await registerSessionHook(
+      `http://127.0.0.1:${this.server.port}/context`
+    );
+    if (this.hookRegistration.status === 'failed') {
+      this.push({
+        type: 'status',
+        message: `Could not install the session hook: ${this.hookRegistration.detail}`,
+        level: 'warn',
+        at: Date.now()
+      });
     }
 
     this.buildQueue();
