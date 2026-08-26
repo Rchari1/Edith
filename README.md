@@ -1,6 +1,10 @@
-# Edith
+<p align="center">
+  <img src="assets/icon.png" alt="Edith" width="132" height="132">
+</p>
 
-**A second brain for Claude.**
+<h1 align="center">Edith</h1>
+
+<p align="center"><strong>A second brain for Claude.</strong></p>
 
 Edith watches your Claude Code sessions, distils them into linked Markdown notes, and serves them back to Claude over MCP. When Claude consults the brain during a session, the parts it used light up in the app.
 
@@ -36,6 +40,12 @@ To build a distributable `.dmg`:
 
 ```bash
 npm run dist
+```
+
+The app icon is generated from `assets/logo.svg` - Electron itself does the rasterising, so no cairo or rsvg toolchain is needed:
+
+```bash
+npm run icon
 ```
 
 ## How it works

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "electron-vite preview",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "icon": "electron scripts/render-icon.cjs && iconutil -c icns assets/icon.iconset -o assets/icon.icns"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -39,13 +40,16 @@
     "productName": "Edith",
     "files": [
       "out/**/*",
+      "assets/icon.png",
       "package.json"
     ],
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
         "dmg"
-      ]
+      ],
+      "icon": "assets/icon.icns",
+      "identity": null
     },
     "directories": {
       "output": "release"

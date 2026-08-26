@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } from 'electron';
 import path from 'node:path';
 import { AppState } from './app-state.js';
 import { registerAll, unregisterAll } from '../core/onboarding/register.js';
@@ -17,6 +17,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0b0d12',
+    title: 'Edith',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
     webPreferences: {
@@ -143,10 +144,22 @@ function registerIpc(appState: AppState): void {
 // gated on holding the lock: calling app.quit() alone does NOT stop whenReady
 // from firing, so an unguarded second instance still clobbers the config on
 // its way out.
+// Without this the menu bar and dock read "Electron" whenever the app is run
+// from source rather than from a packaged bundle.
+app.setName('Edith');
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
   app.quit();
+}
+
+/** In development there is no bundle to read the icon from, so set it explicitly. */
+function applyDockIcon(): void {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const iconPath = path.join(__dirname, '../../assets/icon.png');
+  const image = nativeImage.createFromPath(iconPath);
+  if (!image.isEmpty()) app.dock.setIcon(image);
 }
 
 function start(): void {
@@ -157,6 +170,7 @@ function start(): void {
   });
 
   void app.whenReady().then(async () => {
+    applyDockIcon();
     win = createWindow();
 
     state = new AppState(app.getPath('userData'));

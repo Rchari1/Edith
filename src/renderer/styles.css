@@ -48,10 +48,11 @@ body {
   -webkit-app-region: drag;
 }
 .brand h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
-.brand-dot {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 11px var(--accent);
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  filter: drop-shadow(0 0 6px rgba(125, 211, 252, 0.45));
 }
 
 .search-wrap { padding: 0 12px 10px; }
