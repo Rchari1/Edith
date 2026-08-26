@@ -17,6 +17,8 @@ export interface GraphNode {
   id: string;
   title: string;
   origin: NoteFrontmatter['origin'];
+  /** First tag, used by the UI to color and group. Empty for ghost nodes. */
+  category: string;
   sourceCount: number;
   degree: number;
   /** True when something links here but no note exists yet. */
@@ -205,6 +207,7 @@ export class Vault {
       id: n.frontmatter.id,
       title: n.frontmatter.title,
       origin: n.frontmatter.origin,
+      category: n.frontmatter.tags?.[0] ?? 'other',
       sourceCount: n.frontmatter.sources.length,
       degree: degree.get(n.frontmatter.id) ?? 0,
       missing: false,
@@ -220,6 +223,7 @@ export class Vault {
           id,
           title: id.replace(/-/g, ' '),
           origin: 'distilled',
+          category: '',
           sourceCount: 0,
           degree: degree.get(id) ?? 0,
           missing: true,
