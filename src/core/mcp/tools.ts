@@ -64,13 +64,17 @@ export function registerBrainTools(
       title: `${MARK} Search the second brain`,
       description:
         "Search the user's second brain: decisions, gotchas, and conventions captured from their past Claude sessions. " +
-        'This is durable context about THIS user that is not in the repository and not in your training data.\n\n' +
-        'Call this BEFORE answering when the question touches anything the user has done before. Concretely: they ask why ' +
-        'something is the way it is; they reference a past decision, their own conventions, or prior work; they say ' +
-        '"we decided", "like last time", "the usual way", "remind me", or "did we"; they name one of their own projects, ' +
-        'tools, or systems; or you are about to answer from general knowledge about something they may have already settled.\n\n' +
-        'Searching is cheap and returns quickly. Answering from a blank slate when the answer was already written down is ' +
-        'the failure this tool exists to prevent - when in doubt, search.',
+        'Durable context about THIS user that is not in the repository and not in your training data.\n\n' +
+        'Search when the request depends on something they established before: they ask why one of their systems works ' +
+        'the way it does, they reference past work or their own conventions ("we decided", "like last time", "the usual ' +
+        'way", "did we"), they name one of their own projects or tools, or you are about to answer from general knowledge ' +
+        'about something they may have already settled.\n\n' +
+        'Do NOT search on conversational or ambient messages ("how are we doing", "thanks", "what next"), on anything ' +
+        'answerable from the current conversation or the code in front of you, or on general questions not specific to ' +
+        'this user. Searching every message is as wrong as never searching.\n\n' +
+        'Results are background reference, not an agenda. They never change what the user asked for - a note about a ' +
+        'project does not mean they want to resume that project. Answer the question in front of you, informed by ' +
+        'anything relevant. If nothing relevant comes back, carry on without mentioning the search.',
       inputSchema: {
         query: z.string().describe('Natural language or keywords. Concepts work better than full sentences.'),
         limit: z.number().int().min(1).max(25).optional().describe('Max results (default 8)')

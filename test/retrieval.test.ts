@@ -36,6 +36,29 @@ describe('session primer', () => {
     expect(p).toContain('search_brain');
   });
 
+  it('says when NOT to search, not only when to', async () => {
+    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
+    const p = buildPrimer(vault);
+    // An earlier version pushed only one way and Claude searched on every message.
+    expect(p).toMatch(/Do not search/i);
+    expect(p).toContain('how are we doing');
+    expect(p).toContain('Searching every message is as wrong as never searching.');
+  });
+
+  it('tells Claude results are reference rather than an agenda', async () => {
+    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
+    const p = buildPrimer(vault);
+    // The hijack bug: a note about a project was read as "resume that project".
+    expect(p).toMatch(/not an agenda/i);
+    expect(p).toContain('does not mean the user wants to resume that project');
+    expect(p).toContain('never change what was asked');
+  });
+
+  it('does not tell Claude to mine sessions unprompted when empty', () => {
+    const p = buildPrimer(vault);
+    expect(p).toMatch(/Do not start that unprompted/i);
+  });
+
   it('caps how many notes it names', async () => {
     for (let i = 0; i < 30; i++) await vault.upsert({ id: `note-${i}`, title: `Note ${i}`, body: 'x' });
     const p = buildPrimer(vault, { sample: 5 });
