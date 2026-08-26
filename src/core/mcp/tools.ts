@@ -63,9 +63,14 @@ export function registerBrainTools(
     {
       title: `${MARK} Search the second brain`,
       description:
-        "Search the user's personal knowledge base of decisions, gotchas, and architectural notes distilled from their past Claude sessions. " +
-        'Use this BEFORE answering questions about the user\'s own projects, conventions, or past decisions - it often contains context that is not in the current repository. ' +
-        'Worth checking whenever the user says "we decided", "like last time", "the usual way", or refers to prior work.',
+        "Search the user's second brain: decisions, gotchas, and conventions captured from their past Claude sessions. " +
+        'This is durable context about THIS user that is not in the repository and not in your training data.\n\n' +
+        'Call this BEFORE answering when the question touches anything the user has done before. Concretely: they ask why ' +
+        'something is the way it is; they reference a past decision, their own conventions, or prior work; they say ' +
+        '"we decided", "like last time", "the usual way", "remind me", or "did we"; they name one of their own projects, ' +
+        'tools, or systems; or you are about to answer from general knowledge about something they may have already settled.\n\n' +
+        'Searching is cheap and returns quickly. Answering from a blank slate when the answer was already written down is ' +
+        'the failure this tool exists to prevent - when in doubt, search.',
       inputSchema: {
         query: z.string().describe('Natural language or keywords. Concepts work better than full sentences.'),
         limit: z.number().int().min(1).max(25).optional().describe('Max results (default 8)')

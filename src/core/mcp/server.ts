@@ -7,6 +7,8 @@ import type { Vault } from '../vault/vault.js';
 import { BrainEventBus } from './events.js';
 import { registerBrainTools } from './tools.js';
 import type { SessionSource } from '../sessions/source.js';
+import { buildPrimer, buildHookPayload } from '../context/primer.js';
+import { RetrievalStats } from './stats.js';
 
 export const DEFAULT_PORT = 4319;
 
@@ -44,6 +46,8 @@ export async function findFreePort(start = DEFAULT_PORT, attempts = 50): Promise
  */
 export class BrainServer {
   readonly bus = new BrainEventBus();
+  /** Is Claude reaching for the brain on its own? The number that matters. */
+  readonly stats = new RetrievalStats();
   private http: HttpServer | null = null;
   private boundPort: number | null = null;
   private readonly callLog: Array<{ method: string; tool?: string; at: number }> = [];
@@ -63,6 +67,7 @@ export class BrainServer {
   }
 
   async start(): Promise<number> {
+    this.stats.attach(this.bus);
     const host = this.opts.host ?? '127.0.0.1';
     const port = this.opts.port ?? (await findFreePort());
 
@@ -75,6 +80,25 @@ export class BrainServer {
 
     // Recent activity, for diagnosing "Claude is connected but nothing lit up".
     // Distinguishes "no tool call arrived" from "a call arrived and matched nothing".
+    /*
+     * Emits a Claude Code SessionStart hook payload directly, so the hook
+     * itself is a bare curl with no script file to go stale or lose its
+     * executable bit. If Edith is not running the curl fails, the hook
+     * produces nothing, and the session starts normally.
+     */
+    app.get('/context', (_req, res) => {
+      res.type('application/json').send(buildHookPayload(buildPrimer(this.vault)));
+    });
+
+    /** The same primer as plain text, for CLAUDE.md and for debugging. */
+    app.get('/context.txt', (_req, res) => {
+      res.type('text/plain').send(buildPrimer(this.vault));
+    });
+
+    app.get('/stats', (_req, res) => {
+      res.json(this.stats.report());
+    });
+
     app.get('/events', (_req, res) => {
       res.json({ calls: this.callLog.slice(-50), events: this.bus.recent(50) });
     });
