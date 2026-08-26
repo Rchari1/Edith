@@ -10,6 +10,7 @@ import { Forge } from '../core/forge/forge.js';
 import { installProposal, uninstallProposal } from '../core/forge/install.js';
 import type { SkillProposal } from '../core/forge/types.js';
 import { createThrottle } from '../core/util/throttle.js';
+import chokidar, { type FSWatcher } from 'chokidar';
 import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
 import { registerAll, type RegistrationResult } from '../core/onboarding/register.js';
@@ -45,6 +46,9 @@ export class AppState extends EventEmitter {
   settings!: Settings;
   vault!: Vault;
   forge!: Forge;
+  private forgeWatcher: FSWatcher | null = null;
+  /** Editors write in bursts; one reload per burst is enough. */
+  private readonly forgeReloadThrottle = createThrottle(400);
   server!: BrainServer;
   watcher!: SessionWatcher;
   queue: DistillQueue | null = null;
@@ -74,6 +78,22 @@ export class AppState extends EventEmitter {
 
     this.forge = new Forge(this.settings.vaultPath);
     await this.forge.init();
+
+    // Proposals are plain markdown and are advertised as editable in any
+    // editor, so the forge has to notice edits made outside the app - the same
+    // courtesy the vault already extends to notes.
+    this.forgeWatcher = chokidar.watch(this.forge.dir, {
+      ignoreInitial: true,
+      persistent: true,
+      ignored: (p: string) => p.endsWith('~') || p.includes('.tmp-')
+    });
+    const reloadForge = () => {
+      if (!this.forgeReloadThrottle('forge')) return;
+      void this.forge.reload().then(() => this.emit('forge-changed'));
+    };
+    this.forgeWatcher.on('add', reloadForge);
+    this.forgeWatcher.on('change', reloadForge);
+    this.forgeWatcher.on('unlink', reloadForge);
 
     // Constructed before the server so its sessions can be exposed as tools;
     // watching itself does not begin until start() below.
@@ -407,6 +427,8 @@ export class AppState extends EventEmitter {
 
   async stop(): Promise<void> {
     this.queue?.stop();
+    await this.forgeWatcher?.close();
+    this.forgeWatcher = null;
     await this.watcher?.stop();
     await this.server?.stop();
     this.vault?.close();
