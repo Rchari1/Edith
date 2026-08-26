@@ -7,7 +7,7 @@ import type { Vault } from '../vault/vault.js';
 import { BrainEventBus } from './events.js';
 import { registerBrainTools } from './tools.js';
 import type { SessionSource } from '../sessions/source.js';
-import { buildPrimer, buildHookPayload } from '../context/primer.js';
+import { buildPrimer, buildHookPayload, buildAnnouncement } from '../context/primer.js';
 import { RetrievalStats } from './stats.js';
 
 export const DEFAULT_PORT = 4319;
@@ -87,7 +87,9 @@ export class BrainServer {
      * produces nothing, and the session starts normally.
      */
     app.get('/context', (_req, res) => {
-      res.type('application/json').send(buildHookPayload(buildPrimer(this.vault)));
+      res.type('application/json').send(
+        buildHookPayload(buildPrimer(this.vault), buildAnnouncement(this.vault))
+      );
     });
 
     /** The same primer as plain text, for CLAUDE.md and for debugging. */

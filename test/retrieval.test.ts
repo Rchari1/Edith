@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Vault } from '@core/vault/vault.js';
 import { SqliteSearchProvider } from '@core/vault/search.js';
-import { buildPrimer, buildHookPayload } from '@core/context/primer.js';
+import { buildPrimer, buildHookPayload, buildAnnouncement } from '@core/context/primer.js';
 import { registerSessionHook, unregisterSessionHook, HOOK_MARKER } from '@core/onboarding/hooks.js';
 import { RetrievalStats } from '@core/mcp/stats.js';
 import { tmpDir, rm } from './helpers.js';
@@ -63,6 +63,27 @@ describe('session primer', () => {
     for (let i = 0; i < 30; i++) await vault.upsert({ id: `note-${i}`, title: `Note ${i}`, body: 'x' });
     const p = buildPrimer(vault, { sample: 5 });
     expect(p).toContain('and 25 more');
+  });
+
+  it('announces itself in a single user-visible line', async () => {
+    expect(buildAnnouncement(vault)).toContain('no memories yet');
+    await vault.upsert({ id: 'a', title: 'A', body: 'x' });
+    expect(buildAnnouncement(vault)).toBe('Edith connected - 1 memory');
+    await vault.upsert({ id: 'b', title: 'B', body: 'y' });
+    expect(buildAnnouncement(vault)).toBe('Edith connected - 2 memories');
+  });
+
+  it('sends the primer to the model and the announcement to the user', () => {
+    // additionalContext is model-only; systemMessage is what the user actually
+    // sees. Emitting only the former is why Edith was invisible in-session.
+    const parsed = JSON.parse(buildHookPayload('PRIMER TEXT', 'VISIBLE LINE'));
+    expect(parsed.hookSpecificOutput.additionalContext).toBe('PRIMER TEXT');
+    expect(parsed.systemMessage).toBe('VISIBLE LINE');
+  });
+
+  it('omits systemMessage when there is nothing to announce', () => {
+    const parsed = JSON.parse(buildHookPayload('PRIMER TEXT'));
+    expect(parsed.systemMessage).toBeUndefined();
   });
 
   it('emits the exact shape a SessionStart hook must return', () => {

@@ -69,12 +69,34 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
   ].join('\n');
 }
 
-/** The exact JSON shape a Claude Code SessionStart hook must emit. */
-export function buildHookPayload(primer: string): string {
+/**
+ * One short line announcing Edith, shown to the user in the transcript.
+ *
+ * Deliberately separate from the primer. `additionalContext` reaches the model
+ * only - which is why the primer worked while being completely invisible, and
+ * why the app appeared dead in the session even when it was not. This is the
+ * visible half, and it stays a single line because it prints at the top of
+ * every session and chrome that repeats has to be small.
+ */
+export function buildAnnouncement(vault: Vault): string {
+  const count = vault.size();
+  if (count === 0) return 'Edith connected - no memories yet';
+  return `Edith connected - ${count} memor${count === 1 ? 'y' : 'ies'}`;
+}
+
+/**
+ * The exact JSON shape a Claude Code SessionStart hook must emit.
+ *
+ * `hookSpecificOutput.additionalContext` goes to the model; `systemMessage`
+ * is rendered to the user. Emitting both is what makes Edith both effective
+ * and visible.
+ */
+export function buildHookPayload(primer: string, announcement?: string): string {
   return JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
       additionalContext: primer
-    }
+    },
+    ...(announcement ? { systemMessage: announcement } : {})
   });
 }
