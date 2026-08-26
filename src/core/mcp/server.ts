@@ -95,6 +95,19 @@ export class BrainServer {
       res.type('text/plain').send(buildPrimer(this.vault));
     });
 
+    /** Everything a status line needs, in one cheap call. */
+    app.get('/session/:id', (req, res) => {
+      const id = String(req.params.id ?? '');
+      // Polling is itself proof this session is live; it makes tool-call
+      // attribution work without waiting on a transcript write.
+      if (id && id !== 'unknown') this.stats.markLive(id);
+      res.json({
+        ok: true,
+        notes: this.vault.size(),
+        session: this.stats.forSession(id)
+      });
+    });
+
     app.get('/stats', (_req, res) => {
       res.json(this.stats.report());
     });

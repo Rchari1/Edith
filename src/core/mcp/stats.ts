@@ -78,6 +78,38 @@ export class RetrievalStats {
     else record.saves++;
   }
 
+  /**
+   * Counts for one session, keyed by Claude Code's own session id.
+   *
+   * The watcher reads ~/.claude/projects/<project>/<session-id>.jsonl, so the
+   * id here is the same one a statusline script receives on stdin - which is
+   * what lets the status bar report what happened in *this* session rather
+   * than a global total.
+   */
+  /**
+   * Register that a session is live right now.
+   *
+   * MCP calls carry no session id, so attribution leans on knowing which
+   * session was most recently active. Transcript writes alone are too sparse -
+   * a session that has not written since the app started would drop every tool
+   * call. A status line poll is a far better heartbeat: Claude Code renders it
+   * on every update and hands us the session id directly.
+   */
+  markLive(sessionId: string, now = Date.now()): void {
+    if (!sessionId) return;
+    const existing = this.sessions.get(sessionId);
+    if (existing) existing.lastSeen = now;
+    else this.sessions.set(sessionId, { firstSeen: now, lastSeen: now, searches: 0, reads: 0, saves: 0 });
+    this.lastActive = sessionId;
+    this.lastActiveAt = now;
+  }
+
+  forSession(sessionId: string): { searches: number; reads: number; saves: number; seen: boolean } {
+    const r = this.sessions.get(sessionId);
+    if (!r) return { searches: 0, reads: 0, saves: 0, seen: false };
+    return { searches: r.searches, reads: r.reads, saves: r.saves, seen: true };
+  }
+
   report(): RetrievalReport {
     const all = [...this.sessions.entries()];
     const used = all.filter(([, r]) => r.searches + r.reads + r.saves > 0);
