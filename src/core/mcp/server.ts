@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Server as HttpServer } from 'node:http';
 import net from 'node:net';
+import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Vault } from '../vault/vault.js';
@@ -68,6 +69,8 @@ export class BrainServer {
 
   async start(): Promise<number> {
     this.stats.attach(this.bus);
+    // Beside the vault, not inside notes/: derived machine state, never synced.
+    this.stats.persistTo(path.join(this.vault.root, '.edith', 'retrieval.json'));
     const host = this.opts.host ?? '127.0.0.1';
     const port = this.opts.port ?? (await findFreePort());
 
@@ -196,6 +199,7 @@ export class BrainServer {
   }
 
   async stop(): Promise<void> {
+    this.stats.flush();
     const server = this.http;
     if (!server) return;
     await new Promise<void>((resolve) => server.close(() => resolve()));

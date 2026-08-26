@@ -203,3 +203,58 @@ describe('RetrievalStats', () => {
     expect(new RetrievalStats().report().coverage).toBe('0/0 (0%)');
   });
 });
+
+describe('RetrievalStats persistence', () => {
+  let dir: string;
+  afterEach(() => rm(dir));
+
+  it('survives a restart', () => {
+    dir = tmpDir('sb-stats-');
+    const file = path.join(dir, '.edith', 'retrieval.json');
+
+    const first = new RetrievalStats();
+    first.persistTo(file);
+    first.record({ type: 'session-active', sessionId: 'aaa', project: 'p', at: Date.now() });
+    first.record({ type: 'considered', noteIds: ['n'], query: 'q', at: Date.now() });
+    first.flush();
+
+    const second = new RetrievalStats();
+    second.persistTo(file);
+    const r = second.report();
+    expect(r.sessionsSeen).toBe(1);
+    expect(r.totals.searches).toBe(1);
+  });
+
+  it('drops sessions older than the retention window', () => {
+    dir = tmpDir('sb-stats-old-');
+    const file = path.join(dir, '.edith', 'retrieval.json');
+    const old = Date.now() - 90 * 86_400_000;
+
+    const first = new RetrievalStats();
+    first.persistTo(file);
+    first.record({ type: 'session-active', sessionId: 'ancient', project: 'p', at: old });
+    first.record({ type: 'session-active', sessionId: 'recent', project: 'p', at: Date.now() });
+    first.flush();
+
+    const second = new RetrievalStats();
+    second.persistTo(file, 30);
+    expect(second.report().perSession.map((s) => s.session)).toEqual(['recent']);
+  });
+
+  it('starts clean when the file is missing or corrupt', () => {
+    dir = tmpDir('sb-stats-bad-');
+    const file = path.join(dir, '.edith', 'retrieval.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'not json {{{');
+
+    const s = new RetrievalStats();
+    expect(() => s.persistTo(file)).not.toThrow();
+    expect(s.report().sessionsSeen).toBe(0);
+  });
+
+  it('is a no-op without a file, rather than throwing', () => {
+    const s = new RetrievalStats();
+    s.record({ type: 'session-active', sessionId: 'x', project: 'p', at: Date.now() });
+    expect(() => s.flush()).not.toThrow();
+  });
+});
