@@ -1,4 +1,4 @@
-# SecondBrain Architecture Note
+# Edith Architecture Note
 
 **Date:** 2026-08-25
 **Status:** Draft — pending Kate's review. Interfaces, not implementation.

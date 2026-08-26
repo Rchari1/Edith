@@ -1,4 +1,4 @@
-# SecondBrain Development Plan
+# Edith Development Plan
 
 **Date:** 2026-08-25
 **Status:** Draft — pending Kate's review
@@ -8,7 +8,7 @@
 
 Obsidian's model, adapted for Claude.
 
-- **Free local core.** SecondBrain is a local MCP server. All user data lives on the user's machine as inspectable, portable files — Markdown notes as the source of truth, SQLite strictly as a rebuildable derived index. No data leaves the machine by default. If the company disappears, the user keeps a usable folder of files. Packaged as an MCPB desktop extension for one-click install in Claude Desktop; addable to Claude Code via `claude mcp add`. Transports: stdio for local clients, plus a Streamable HTTP mode so advanced users can self-host and add it as a claude.ai custom connector.
+- **Free local core.** Edith is a local MCP server. All user data lives on the user's machine as inspectable, portable files — Markdown notes as the source of truth, SQLite strictly as a rebuildable derived index. No data leaves the machine by default. If the company disappears, the user keeps a usable folder of files. Packaged as an MCPB desktop extension for one-click install in Claude Desktop; addable to Claude Code via `claude mcp add`. Transports: stdio for local clients, plus a Streamable HTTP mode so advanced users can self-host and add it as a claude.ai custom connector.
 - **Paid: end-to-end-encrypted sync.** A hosted relay that syncs a brain across a user's devices. The server stores and relays ciphertext only; keys never leave the client. We must be able to say truthfully that we cannot read user data. Licensing is a signed token the local server caches, valid offline for weeks; the license check transmits nothing but a license ID.
 - **The Claude-specific differentiator.** Opinionated memory capture and retrieval that works for people who don't know how to prompt for it, and stays out of the way of developers who do: a small set of well-defined tools with load-bearing descriptions, bundled skills/prompts for common workflows, and sensible defaults for what gets remembered automatically vs. on request.
 
