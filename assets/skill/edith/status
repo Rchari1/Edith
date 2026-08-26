@@ -14,6 +14,12 @@ import urllib.request
 
 PORTS = (4319, 4320, 4321, 4322)
 
+# Mission-control register. The pair matters as much as the words: "stood down"
+# says resting rather than broken, and an idle Edith genuinely is healthy - a
+# failure state that reads like a crash trains people to ignore it.
+STATUS_UP = "standing by"
+STATUS_DOWN = "stood down"
+
 GLYPH = [
     "   ╭──╮╭──╮ ",
     "  ╭╯▪ ││ ▪╰╮",
@@ -68,7 +74,7 @@ def main():
         render([
             "EDITH · second brain",
             "",
-            "○ offline",
+            f"\u25cb {STATUS_DOWN}",
             "",
             "open the Edith app to restore recall",
         ])
@@ -93,7 +99,7 @@ def main():
     render([
         "EDITH · second brain",
         "",
-        f"● online        :{port}",
+        f"\u25cf {STATUS_UP}     :{port}",
         f"memories  {tiered(notes)}  {notes}",
         f"engaged   {engaged}  {engaged_label}",
         f"recalled  {linear(here, max(here, 3))}  {here} here",
