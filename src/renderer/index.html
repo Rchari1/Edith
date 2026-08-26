@@ -74,9 +74,16 @@
         <h2 id="detail-title"></h2>
         <div class="detail-meta" id="detail-meta"></div>
         <div class="detail-body" id="detail-body"></div>
-        <div class="detail-actions">
+        <textarea class="detail-editor hidden" id="detail-editor" spellcheck="false"></textarea>
+        <div class="detail-actions" id="detail-actions-view">
+          <button id="btn-edit">Edit</button>
           <button id="btn-open-file">Open .md</button>
           <button id="btn-delete" class="danger">Delete</button>
+        </div>
+        <div class="detail-actions hidden" id="detail-actions-edit">
+          <span class="edit-hint">&#8984;S to save &middot; Esc to cancel</span>
+          <button id="btn-edit-cancel">Cancel</button>
+          <button id="btn-edit-save" class="primary">Save</button>
         </div>
       </section>
 
@@ -112,6 +119,17 @@
         </div>
       </section>
 
+      <section id="connection" class="modal hidden">
+        <div class="modal-card">
+          <h2>Connection</h2>
+          <div class="conn-rows" id="conn-rows"></div>
+          <div class="modal-actions">
+            <button id="conn-reregister">Re-register with Claude</button>
+            <button id="conn-close" class="primary">Close</button>
+          </div>
+        </div>
+      </section>
+
       <section id="settings" class="modal hidden">
         <div class="modal-card">
           <h2>Settings</h2>
@@ -142,10 +160,10 @@
       </section>
 
       <footer id="activity">
-        <div class="presence" id="presence">
+        <button class="presence" id="presence" title="Connection details">
           <span class="presence-dot" id="presence-dot"></span>
           <span class="presence-text" id="presence-text">Edith on standby</span>
-        </div>
+        </button>
         <div id="activity-inner"></div>
       </footer>
     </div>

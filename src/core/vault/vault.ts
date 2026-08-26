@@ -166,6 +166,36 @@ export class Vault {
     return note;
   }
 
+  /**
+   * Replace a note's body and title outright.
+   *
+   * Distinct from upsert, which deliberately *merges* bodies so a second
+   * session about the same concept deepens the note. That is right for
+   * capture and wrong for editing - someone deleting a sentence by hand must
+   * not have it appended straight back.
+   *
+   * Provenance, links, tags and created date are preserved; origin becomes
+   * 'human' because a person has now touched it.
+   */
+  async updateNote(id: string, patch: { title?: string; body?: string }): Promise<Note | null> {
+    const existing = this.cache.get(id);
+    if (!existing) return null;
+
+    const frontmatter: NoteFrontmatter = {
+      ...existing.frontmatter,
+      title: patch.title?.trim() || existing.frontmatter.title,
+      updated: new Date().toISOString().slice(0, 10),
+      origin: 'human'
+    };
+    const body = patch.body !== undefined ? patch.body.trim() : existing.body;
+    const note: Note = { frontmatter, body, path: existing.path };
+
+    await fs.writeFile(existing.path, serializeNote(note), 'utf8');
+    this.cache.set(id, note);
+    await this.index.upsert(note);
+    return note;
+  }
+
   async remove(id: string): Promise<boolean> {
     const note = this.cache.get(id);
     if (!note) return false;

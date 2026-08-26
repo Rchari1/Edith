@@ -14,6 +14,8 @@ const api = {
   reregister: () => ipcRenderer.invoke('brain:reregister'),
   unregister: () => ipcRenderer.invoke('brain:unregister'),
   deleteNote: (id: string) => ipcRenderer.invoke('brain:delete-note', id),
+  updateNote: (id: string, patch: { title?: string; body?: string }) =>
+    ipcRenderer.invoke('brain:update-note', id, patch),
   revealVault: () => ipcRenderer.invoke('brain:reveal-vault'),
   pickFiles: () => ipcRenderer.invoke('brain:pick-files'),
   importFiles: (files: string[], mode: 'verbatim' | 'distill') =>

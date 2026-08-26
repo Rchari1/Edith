@@ -156,6 +156,66 @@ describe('Vault', () => {
     }
   });
 
+  it('updateNote replaces the body instead of merging it', async () => {
+    // upsert deliberately merges so a second session deepens a note. Editing
+    // must not do that - deleting a sentence by hand has to stick.
+    await vault.upsert({ id: 'editable', title: 'Editable', body: 'First line.\n\nSecond line.' });
+    const updated = await vault.updateNote('editable', { body: 'First line.' });
+
+    expect(updated?.body).toBe('First line.');
+    expect(vault.get('editable')!.body).not.toContain('Second line.');
+  });
+
+  it('updateNote preserves provenance, links and created date', async () => {
+    await vault.upsert({
+      id: 'keeps',
+      title: 'Keeps',
+      body: 'body',
+      links: ['other'],
+      tags: ['t'],
+      source: { session: 's1', project: 'p', at: '2026-01-01' }
+    });
+    const before = vault.get('keeps')!.frontmatter;
+    const after = (await vault.updateNote('keeps', { body: 'new body' }))!.frontmatter;
+
+    expect(after.sources).toEqual(before.sources);
+    expect(after.links).toEqual(before.links);
+    expect(after.tags).toEqual(before.tags);
+    expect(after.created).toBe(before.created);
+  });
+
+  it('updateNote marks the note as human-edited', async () => {
+    await vault.upsert({ id: 'byclaude', title: 'By Claude', body: 'x', origin: 'claude' });
+    const after = await vault.updateNote('byclaude', { body: 'edited by a person' });
+    expect(after?.frontmatter.origin).toBe('human');
+  });
+
+  it('updateNote can retitle without touching the body', async () => {
+    await vault.upsert({ id: 'retitle', title: 'Old Title', body: 'unchanged' });
+    const after = await vault.updateNote('retitle', { title: 'New Title' });
+    expect(after?.frontmatter.title).toBe('New Title');
+    expect(after?.body).toBe('unchanged');
+  });
+
+  it('updateNote survives a round trip through disk', async () => {
+    await vault.upsert({ id: 'persist', title: 'Persist', body: 'original' });
+    await vault.updateNote('persist', { body: 'rewritten' });
+    await vault.reload();
+    expect(vault.get('persist')!.body).toBe('rewritten');
+  });
+
+  it('updateNote returns null for an unknown id', async () => {
+    expect(await vault.updateNote('nope', { body: 'x' })).toBeNull();
+  });
+
+  it('an edited note is searchable by its new text, not its old', async () => {
+    await vault.upsert({ id: 'searchme', title: 'Search Me', body: 'aardvark' });
+    await vault.updateNote('searchme', { body: 'zeppelin' });
+
+    expect((await vault.search('zeppelin')).map((h) => h.id)).toContain('searchme');
+    expect((await vault.search('aardvark')).map((h) => h.id)).not.toContain('searchme');
+  });
+
   it('removes a note from disk and index', async () => {
     await vault.upsert({ id: 'temp', title: 'Temp', body: 'gone soon' });
     expect(await vault.remove('temp')).toBe(true);

@@ -92,6 +92,13 @@ function registerIpc(appState: AppState): void {
     return results;
   });
 
+  ipcMain.handle('brain:update-note', async (_e, id: string, patch: { title?: string; body?: string }) => {
+    const note = await appState.vault.updateNote(id, patch);
+    if (!note) return null;
+    send('brain:vault-changed', null);
+    return { frontmatter: note.frontmatter, body: note.body, path: note.path };
+  });
+
   ipcMain.handle('brain:delete-note', async (_e, id: string) => {
     const ok = await appState.vault.remove(id);
     send('brain:vault-changed', null);

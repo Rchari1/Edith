@@ -26,6 +26,10 @@ export interface BrainStatus {
   registrations: RegistrationResult[];
   queue: { total: number; done: number; failed: number; pending: number };
   watching: string;
+  /** Whether the SessionStart primer hook is installed, and where. */
+  hook: { status: string; configPath: string; detail?: string } | null;
+  /** When a Claude session last wrote to a transcript, so the UI can say "seen 2m ago". */
+  lastSessionAt: number | null;
 }
 
 /**
@@ -48,6 +52,7 @@ export class AppState extends EventEmitter {
   private backfilling = false;
   /** A busy transcript writes constantly; surface at most one heartbeat per session per 1.5s. */
   private readonly activityThrottle = createThrottle(1500);
+  private lastSessionAt: number | null = null;
 
   constructor(private readonly userDataDir: string) {
     super();
@@ -110,6 +115,7 @@ export class AppState extends EventEmitter {
     // heartbeat so the app visibly reacts while Claude is working, even when
     // the brain itself is not being queried - but throttle it hard.
     this.watcher.on('activity', ({ sessionId, file }: { sessionId: string; file: string }) => {
+      this.lastSessionAt = Date.now();
       if (!this.activityThrottle(sessionId)) return;
       const project = path.basename(path.dirname(file));
       this.push({ type: 'session-active', sessionId, project, at: Date.now() });
@@ -326,7 +332,15 @@ export class AppState extends EventEmitter {
       hasApiKey: Boolean(resolveApiKey(this.settings)),
       registrations: this.registrations,
       queue: this.queue?.stats() ?? { total: 0, done: 0, failed: 0, pending: 0 },
-      watching: this.watcher?.projectsRoot ?? ''
+      watching: this.watcher?.projectsRoot ?? '',
+      hook: this.hookRegistration
+        ? {
+            status: this.hookRegistration.status,
+            configPath: this.hookRegistration.configPath,
+            ...(this.hookRegistration.detail ? { detail: this.hookRegistration.detail } : {})
+          }
+        : null,
+      lastSessionAt: this.lastSessionAt
     };
   }
 
