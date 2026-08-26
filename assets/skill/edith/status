@@ -36,8 +36,9 @@ def main():
     if stats:
         t = stats.get("totals", {})
         recalled = t.get("searches", 0) + t.get("reads", 0)
-        print(f"  Recalled      {recalled} time(s) since Edith started")
-        print(f"  Formed        {t.get('saves', 0)} new memor(y/ies)")
+        saves = t.get("saves", 0)
+        print(f"  Recalled      {recalled} time{'' if recalled == 1 else 's'} since Edith started")
+        print(f"  Formed        {saves} new memor{'y' if saves == 1 else 'ies'}")
         print(f"  Coverage      {stats.get('coverage', 'n/a')} of sessions used the brain")
 
         per = stats.get("perSession") or []
