@@ -6,12 +6,12 @@
   "author": "Raghav Chari",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "electron-vite preview",
+    "start": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
@@ -50,5 +50,8 @@
     "directories": {
       "output": "release"
     }
+  },
+  "engines": {
+    "node": ">=22.12"
   }
 }
