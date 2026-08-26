@@ -91,7 +91,7 @@ function renderNoteList(notes: NoteDto[], hits?: SearchHit[]): void {
   if (notes.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'list-empty';
-    empty.textContent = hits ? 'No matches.' : 'No notes yet.';
+    empty.textContent = hits ? 'No matches.' : 'No memories yet.';
     list.appendChild(empty);
     return;
   }
@@ -110,8 +110,9 @@ function renderNoteList(notes: NoteDto[], hits?: SearchHit[]): void {
 
     const meta = document.createElement('span');
     meta.className = 'm';
-    const srcs = f.sources.length === 1 ? '1 session' : `${f.sources.length} sessions`;
-    meta.textContent = `${f.updated} - ${srcs}`;
+    // A single source is the default case - only a woven note earns a count.
+    meta.textContent =
+      f.sources.length > 1 ? `${f.updated} · ${f.sources.length} memories` : f.updated;
     item.appendChild(meta);
 
     const snip = snippetById.get(f.id);
@@ -126,6 +127,9 @@ function renderNoteList(notes: NoteDto[], hits?: SearchHit[]): void {
       void selectNote(f.id);
       graph.focus(f.id);
     });
+    // Hovering a file lights up its particle and the path it is about to travel.
+    item.addEventListener('mouseenter', () => graph.preview(f.id));
+    item.addEventListener('mouseleave', () => graph.preview(null));
     list.appendChild(item);
   }
 }
@@ -149,7 +153,7 @@ async function selectNote(id: string): Promise<void> {
 
   if (f.sources.length) {
     const line2 = document.createElement('div');
-    line2.textContent = `From ${f.sources.length} session${f.sources.length === 1 ? '' : 's'}: ${f.sources
+    line2.textContent = `Woven from ${f.sources.length} memor${f.sources.length === 1 ? 'y' : 'ies'}: ${f.sources
       .map((s) => s.project.replace(/^-Users-[^-]+-?/, '') || 'home')
       .join(', ')}`;
     meta.appendChild(line2);
@@ -189,6 +193,9 @@ function closeDetail(): void {
 /* ---------------- status ---------------- */
 
 function renderStatus(s: Status): void {
+  // The status block was removed from the sidebar; keep this as a no-op guard
+  // so status pushes from the main process stay harmless.
+  if (!document.getElementById('s-server')) return;
   $('s-server').textContent = s.serverUrl ? s.serverUrl.replace('http://127.0.0.1:', ':') : 'offline';
   $('s-server').className = `v ${s.serverUrl ? 'good' : 'bad'}`;
 
@@ -235,7 +242,7 @@ function logActivity(e: BrainEvent): void {
   switch (e.type) {
     case 'considered':
       cls = 'ev-considered';
-      text = `searched "${e.query}" - ${e.noteIds.length} note(s) considered`;
+      text = `recalling "${e.query}" - ${e.noteIds.length} memor${e.noteIds.length === 1 ? "y" : "ies"} surfaced`;
       break;
     case 'opened':
       cls = 'ev-opened';
@@ -264,7 +271,30 @@ function logActivity(e: BrainEvent): void {
 async function refreshGraph(): Promise<void> {
   const g = await window.brain.graph();
   graph.setData(g.nodes, g.edges);
+  renderCatLegend();
   $('empty').classList.toggle('hidden', g.nodes.length > 0);
+}
+
+/** Category chips: click to spotlight a cluster, click again to release it. */
+function renderCatLegend(): void {
+  const el = $('legend-cats');
+  el.innerHTML = '';
+  for (const c of graph.categories()) {
+    const chip = document.createElement('button');
+    chip.className = `cat-chip${graph.highlight === c.name ? ' active' : ''}`;
+    chip.style.setProperty('--c', c.color);
+    const dot = document.createElement('i');
+    const label = document.createElement('span');
+    label.textContent = c.name;
+    const count = document.createElement('em');
+    count.textContent = String(c.count);
+    chip.append(dot, label, count);
+    chip.addEventListener('click', () => {
+      graph.setHighlight(graph.highlight === c.name ? null : c.name);
+      renderCatLegend();
+    });
+    el.appendChild(chip);
+  }
 }
 
 async function refreshAll(): Promise<void> {
@@ -288,7 +318,7 @@ graph.onHover = (node, x, y) => {
     return;
   }
   tip.innerHTML = `<div>${escapeHtml(node.title)}</div><div class="tt-meta">${
-    node.missing ? 'not written yet' : `${node.sourceCount} session(s) - ${node.degree} link(s)`
+    node.missing ? 'not written yet' : `${node.sourceCount} memor${node.sourceCount === 1 ? 'y' : 'ies'} - ${node.degree} link(s)`
   }</div>`;
   tip.style.left = `${x + 14}px`;
   tip.style.top = `${y + 14}px`;
@@ -369,10 +399,29 @@ $('set-save').addEventListener('click', async () => {
 });
 
 /* live events - this is the lighting up */
+let legendTimer: number | undefined;
+/** The state legend appears only while something is actually lit. */
+function showStateLegend(): void {
+  const el = document.querySelector('.legend-row.states');
+  if (!el) return;
+  el.classList.add('visible');
+  window.clearTimeout(legendTimer);
+  legendTimer = window.setTimeout(() => el.classList.remove('visible'), 32000);
+}
+
 window.brain.onEvent((e) => {
-  if (e.type === 'considered') graph.activate(e.noteIds, 'considered');
-  else if (e.type === 'opened') graph.activate(e.noteIds, 'opened');
-  else if (e.type === 'saved') graph.activate(e.noteIds, 'saved');
+  if (e.type === 'considered') {
+    graph.activate(e.noteIds, 'considered');
+    showStateLegend();
+  } else if (e.type === 'opened') {
+    graph.activate(e.noteIds, 'opened');
+    showStateLegend();
+    // The camera follows Claude's attention.
+    if (e.noteIds[0]) graph.focus(e.noteIds[0]);
+  } else if (e.type === 'saved') {
+    graph.activate(e.noteIds, 'saved');
+    showStateLegend();
+  }
   logActivity(e);
 });
 
