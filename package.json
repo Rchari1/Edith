@@ -41,6 +41,8 @@
     "files": [
       "out/**/*",
       "assets/icon.png",
+      "assets/skill/**/*",
+      "assets/statusline/**/*",
       "package.json"
     ],
     "mac": {

@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""On-demand Edith status, rendered for /edith."""
+import json
+import urllib.request
+
+PORTS = (4319, 4320, 4321, 4322)
+MARK = "◈"
+
+
+def get(path):
+    for port in PORTS:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=1) as r:
+                return json.load(r), port
+        except Exception:
+            continue
+    return None, None
+
+
+def main():
+    health, port = get("/health")
+    if not health:
+        print(f"{MARK} EDITH - not running")
+        print()
+        print("  The Edith app is not open, so Claude cannot reach your memories")
+        print("  this session. Open Edith and restart Claude Code.")
+        return
+
+    stats, _ = get("/stats")
+
+    print(f"{MARK} EDITH - Second Brain")
+    print()
+    print(f"  Server        http://127.0.0.1:{port}/mcp")
+    print(f"  Memories      {health.get('notes', 0)}")
+
+    if stats:
+        t = stats.get("totals", {})
+        recalled = t.get("searches", 0) + t.get("reads", 0)
+        print(f"  Recalled      {recalled} time(s) since Edith started")
+        print(f"  Formed        {t.get('saves', 0)} new memor(y/ies)")
+        print(f"  Coverage      {stats.get('coverage', 'n/a')} of sessions used the brain")
+
+        per = stats.get("perSession") or []
+        if per:
+            s = per[0]
+            here = s.get("searches", 0) + s.get("reads", 0)
+            print(f"  This session  {here} recalled, {s.get('saves', 0)} formed")
+
+    print()
+    print("  Ask Claude to search your memories, or say")
+    print('  "review my recent sessions and save anything worth keeping".')
+
+
+if __name__ == "__main__":
+    main()
