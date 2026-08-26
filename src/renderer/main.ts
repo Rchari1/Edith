@@ -200,6 +200,9 @@ function closeDetail(): void {
 /* ---------------- status ---------------- */
 
 function renderStatus(s: Status): void {
+  const sub = document.getElementById('stage-sub');
+  if (sub) sub.textContent = s.noteCount === 1 ? '1 memory' : `${s.noteCount} memories`;
+
   // The status block was removed from the sidebar; keep this as a no-op guard
   // so status pushes from the main process stay harmless.
   if (!document.getElementById('s-server')) return;
@@ -241,6 +244,36 @@ function renderStatus(s: Status): void {
 
 /* ---------------- activity ---------------- */
 
+/* ---------------- presence ---------------- */
+
+let presenceTimer: number | undefined;
+let detailTimer: number | undefined;
+
+/**
+ * Is Claude working right now?
+ *
+ * Driven by transcript writes, which Claude Code emits at turn boundaries -
+ * so this pulses per turn rather than streaming, and lapses to standby after
+ * a quiet period rather than the instant a turn ends.
+ */
+function setPresence(active: boolean): void {
+  const el = $('presence');
+  el.classList.toggle('active', active);
+  $('presence-text').textContent = active ? 'Edith active' : 'Edith on standby';
+
+  window.clearTimeout(presenceTimer);
+  if (active) {
+    presenceTimer = window.setTimeout(() => setPresence(false), 45000);
+  }
+}
+
+/* ---------------- activity ---------------- */
+
+/**
+ * Only things the user would actually want to see. Routine lifecycle chatter
+ * ("Edith ready", "Session settled: ...") is noise next to a presence light
+ * that already says the same thing, so info-level status is dropped.
+ */
 function logActivity(e: BrainEvent): void {
   const el = $('activity-inner');
   let cls = '';
@@ -249,7 +282,7 @@ function logActivity(e: BrainEvent): void {
   switch (e.type) {
     case 'considered':
       cls = 'ev-considered';
-      text = `recalling "${e.query}" - ${e.noteIds.length} memor${e.noteIds.length === 1 ? "y" : "ies"} surfaced`;
+      text = `recalling "${e.query}" - ${e.noteIds.length} memor${e.noteIds.length === 1 ? 'y' : 'ies'} surfaced`;
       break;
     case 'opened':
       cls = 'ev-opened';
@@ -259,14 +292,13 @@ function logActivity(e: BrainEvent): void {
       cls = 'ev-saved';
       text = `saved ${e.noteIds.join(', ')}`;
       break;
-    case 'session-active':
-      cls = 'ev-opened';
-      text = `Claude is working in ${e.project.replace(/^-Users-[^-]+-?/, '') || 'home'}`;
-      break;
     case 'ingest-progress':
       text = `${e.label} ${e.done}/${e.total}`;
       break;
     case 'status':
+      // The presence light covers "something is happening"; only surface
+      // things the user may need to act on.
+      if (e.level === 'info') return;
       cls = e.level === 'error' ? 'ev-error' : '';
       text = e.message;
       break;
@@ -274,8 +306,14 @@ function logActivity(e: BrainEvent): void {
       return;
   }
 
+  el.classList.remove('faded');
   el.innerHTML = `<span class="${cls}">${escapeHtml(text)}</span> <span style="opacity:.5">${timeAgo(e.at)}</span>`;
+
+  // Let it fade back to the presence line rather than leaving a stale message.
+  window.clearTimeout(detailTimer);
+  detailTimer = window.setTimeout(() => el.classList.add('faded'), 9000);
 }
+
 
 /* ---------------- data loading ---------------- */
 
@@ -535,9 +573,30 @@ window.brain.onEvent((e) => {
   } else if (e.type === 'saved') {
     graph.activate(e.noteIds, 'saved');
     showStateLegend();
+  } else if (e.type === 'session-active') {
+    setPresence(true);
   }
+
+  // Any brain traffic at all means Claude is working right now.
+  if (e.type === 'considered' || e.type === 'opened' || e.type === 'saved') setPresence(true);
+
   logActivity(e);
 });
+
+/* The nameplate recedes while the graph is being handled, so it reads as a
+   mark on the glass rather than a panel competing with the nodes. */
+{
+  const canvas = $<HTMLCanvasElement>('graph');
+  const title = $('stage-title');
+  let restore: number | undefined;
+  const recede = () => {
+    title.classList.add('dimmed');
+    window.clearTimeout(restore);
+    restore = window.setTimeout(() => title.classList.remove('dimmed'), 1400);
+  };
+  canvas.addEventListener('mousedown', recede);
+  canvas.addEventListener('wheel', recede, { passive: true });
+}
 
 window.brain.onStatus((s) => renderStatus(s));
 window.brain.onVaultChanged(() => void refreshAll());

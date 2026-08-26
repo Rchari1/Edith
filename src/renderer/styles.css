@@ -425,3 +425,112 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   border: 2px solid transparent;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); background-clip: padding-box; border: 2px solid transparent; }
+
+/* ---------- stage title ----------
+   Floats over the graph as a nameplate. Never intercepts pointer events, and
+   recedes while the graph is handled so it reads as a mark on the glass rather
+   than a panel competing with the nodes. The gradient is the one place colour
+   appears in an otherwise monochrome interface, which is what makes it read as
+   a brand mark instead of chrome. */
+.stage-title {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.9;
+  transition: opacity 0.5s ease;
+  z-index: 5;
+}
+.stage-title.dimmed { opacity: 0.22; }
+
+.stage-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  filter: drop-shadow(0 0 7px rgba(125, 211, 252, 0.3));
+}
+
+.stage-words { display: flex; flex-direction: column; gap: 2px; }
+
+.stage-headline { display: flex; align-items: baseline; gap: 10px; }
+
+.stage-name {
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  line-height: 1.1;
+  background: linear-gradient(100deg, #7dd3fc 0%, #a78bfa 55%, #f5b942 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.stage-tagline {
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.stage-sub {
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+  opacity: 0.75;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+/* ---------- presence ----------
+   Resting state of the footer. The blink is the only moving thing down here,
+   so it reads as a heartbeat rather than decoration; on standby the dot is
+   still and dim so an idle Edith looks calm rather than broken. */
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding-right: 14px;
+  margin-right: 14px;
+  border-right: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.presence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.35;
+  flex: 0 0 6px;
+  transition: opacity 0.4s ease, background 0.4s ease;
+}
+.presence.active .presence-dot {
+  background: #7dd3fc;
+  opacity: 1;
+  animation: presence-blink 1.5s ease-in-out infinite;
+}
+.presence.active .presence-text { color: var(--text); }
+
+@keyframes presence-blink {
+  0%, 100% { opacity: 1;    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.45); }
+  50%      { opacity: 0.35; box-shadow: 0 0 0 4px rgba(125, 211, 252, 0); }
+}
+
+#activity-inner {
+  flex: 1;
+  min-width: 0;
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+#activity-inner.faded { opacity: 0; }
