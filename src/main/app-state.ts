@@ -5,6 +5,7 @@ import { Vault } from '../core/vault/vault.js';
 import { SqliteSearchProvider } from '../core/vault/search.js';
 import { BrainServer, findFreePort } from '../core/mcp/server.js';
 import { SessionWatcher } from '../core/watcher/index.js';
+import { WatcherSessionSource } from '../core/sessions/source.js';
 import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
 import { registerAll, type RegistrationResult } from '../core/onboarding/register.js';
@@ -57,8 +58,16 @@ export class AppState extends EventEmitter {
     );
     await this.vault.init();
 
+    // Constructed before the server so its sessions can be exposed as tools;
+    // watching itself does not begin until start() below.
+    this.watcher = new SessionWatcher({ settleMs: 8000 });
+
     const port = await findFreePort(this.settings.port);
-    this.server = new BrainServer(this.vault, { port });
+    this.server = new BrainServer(
+      this.vault,
+      { port },
+      new WatcherSessionSource(this.watcher, this.vault)
+    );
     this.server.bus.onEvent((e) => this.emit('event', e));
     await this.server.start();
 
@@ -77,7 +86,6 @@ export class AppState extends EventEmitter {
 
     this.buildQueue();
 
-    this.watcher = new SessionWatcher({ settleMs: 8000 });
     this.watcher.on('session-settled', (session: Session) => {
       this.push({ type: 'status', message: `Session settled: ${session.title ?? session.id.slice(0, 8)}`, level: 'info', at: Date.now() });
       if (this.settings.autoDistill) this.queue?.enqueue(session);
