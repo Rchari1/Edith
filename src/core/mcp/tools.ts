@@ -77,12 +77,25 @@ export function registerBrainTools(
         'anything relevant. If nothing relevant comes back, carry on without mentioning the search.',
       inputSchema: {
         query: z.string().describe('Natural language or keywords. Concepts work better than full sentences.'),
-        limit: z.number().int().min(1).max(25).optional().describe('Max results (default 8)')
+        limit: z.number().int().min(1).max(25).optional().describe('Max results (default 8)'),
+        skill: z
+          .string()
+          .max(40)
+          .optional()
+          .describe(
+            'Name of the skill making this search, if one is driving it. Only set this when a skill ' +
+              'explicitly tells you to - it draws that skill as a figure through the notes it touched.'
+          )
       }
     },
-    async ({ query, limit }) => {
+    async ({ query, limit, skill }) => {
       const hits: SearchHit[] = await vault.search(query, limit ?? 8);
-      bus.emitEvent({ type: 'considered', noteIds: hits.map((h) => h.id), query, at: Date.now() });
+      const noteIds = hits.map((h) => h.id);
+      bus.emitEvent({ type: 'considered', noteIds, query, at: Date.now() });
+      // Shape is a property of the skill, declared in its SKILL.md - not
+      // something the caller restates on every search.
+      if (skill)
+        bus.emitEvent({ type: 'skill', skill, noteIds, query, at: Date.now() });
 
       if (hits.length === 0) {
         const total = vault.size();

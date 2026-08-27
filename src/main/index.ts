@@ -5,6 +5,8 @@ import { registerAll, unregisterAll } from '../core/onboarding/register.js';
 import { IMPORTABLE_EXTENSIONS } from '../core/importer/index.js';
 import { migrateLegacyUserData } from './migrate.js';
 import type { BrainEvent } from '../core/types.js';
+import fsp from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 
 
 let state: AppState | null = null;
@@ -52,6 +54,9 @@ function registerIpc(appState: AppState): void {
   ipcMain.handle('brain:graph', () => appState.graph());
   ipcMain.handle('brain:settings', () => appState.settings);
   ipcMain.handle('brain:recent-events', () => appState.server.bus.recent());
+  ipcMain.handle('brain:skills', () => appState.skills());
+  ipcMain.handle('brain:skill-territories', () => appState.territories());
+  ipcMain.handle('brain:skill-overlaps', () => appState.skillOverlaps());
 
   ipcMain.handle('brain:note', (_e, id: string) => {
     const note = appState.vault.get(id);
@@ -105,6 +110,48 @@ function registerIpc(appState: AppState): void {
     return ok;
   });
 
+  /**
+   * Pick a folder and collect the importable files inside it. Walking here
+   * rather than in the renderer keeps filesystem access on this side of the
+   * bridge, and lets an Obsidian vault be added in one gesture.
+   */
+  ipcMain.handle('brain:pick-folder', async () => {
+    if (!win) return [];
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Add a folder to your brain',
+      properties: ['openDirectory']
+    });
+    const root = result.canceled ? undefined : result.filePaths[0];
+    if (!root) return [];
+
+    const found: string[] = [];
+    const MAX_FILES = 2000;
+    const MAX_DEPTH = 8;
+
+    async function walk(dir: string, depth: number): Promise<void> {
+      if (depth > MAX_DEPTH || found.length >= MAX_FILES) return;
+      let entries: Dirent[];
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch {
+        return; // unreadable directory: skip it rather than fail the whole pick
+      }
+      for (const e of entries) {
+        if (found.length >= MAX_FILES) return;
+        // Dot-directories and dependency trees are never notes.
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) await walk(full, depth + 1);
+        else if (IMPORTABLE_EXTENSIONS.some((ext) => e.name.toLowerCase().endsWith(ext))) {
+          found.push(full);
+        }
+      }
+    }
+
+    await walk(root, 0);
+    return found;
+  });
+
   ipcMain.handle('brain:pick-files', async () => {
     if (!win) return [];
     const result = await dialog.showOpenDialog(win, {
@@ -137,6 +184,38 @@ function registerIpc(appState: AppState): void {
 
   ipcMain.handle('brain:reveal-vault', () => {
     void shell.openPath(appState.settings.vaultPath);
+  });
+
+  /**
+   * Skill files are addressed by name, never by path: the renderer can only
+   * reach a SKILL.md that discovery already found, so nothing else on disk is
+   * readable or writable through this bridge.
+   */
+  ipcMain.handle('brain:skill-file', async (_e, name: string) => {
+    const skill = (await appState.skills()).find((s) => s.name === name);
+    if (!skill) return null;
+    try {
+      return { ...skill, content: await fsp.readFile(skill.path, 'utf8') };
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('brain:save-skill', async (_e, name: string, content: string) => {
+    const skill = (await appState.skills()).find((s) => s.name === name);
+    if (!skill) return false;
+    try {
+      await fsp.writeFile(skill.path, content, 'utf8');
+      await appState.skills(true); // frontmatter may have changed the shape
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('brain:open-skill-file', async (_e, name: string) => {
+    const skill = (await appState.skills()).find((s) => s.name === name);
+    if (skill) void shell.openPath(skill.path);
   });
 
   ipcMain.handle('brain:open-note-file', (_e, id: string) => {

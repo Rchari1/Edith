@@ -1,4 +1,6 @@
 import { BrainGraph, type GraphNodeData, type GraphEdgeData } from './graph.js';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 interface NoteFrontmatter {
   id: string;
@@ -25,12 +27,33 @@ interface Status {
 }
 type BrainEvent =
   | { type: 'considered'; noteIds: string[]; query: string; at: number }
+  | { type: 'skill'; skill: string; noteIds: string[]; query: string; at: number }
   | { type: 'opened'; noteIds: string[]; at: number }
   | { type: 'saved'; noteIds: string[]; at: number }
   | { type: 'vault-changed'; at: number }
   | { type: 'session-active'; sessionId: string; project: string; at: number }
   | { type: 'ingest-progress'; done: number; total: number; label: string; at: number }
   | { type: 'status'; message: string; level: 'info' | 'warn' | 'error'; at: number };
+
+type SkillShape = 'chain' | 'loop' | 'hub' | 'spiral';
+
+/** Where a skill keeps working, accumulated across runs. */
+interface SkillTerritory {
+  skill: string;
+  runs: number;
+  lastAt: number;
+  notes: Array<{ id: string; weight: number }>;
+}
+
+/** A skill as declared on disk, mirroring core/skills. */
+interface SkillDef {
+  name: string;
+  description: string;
+  shape: SkillShape;
+  path: string;
+  scope: 'project' | 'user';
+  project: string | null;
+}
 
 declare global {
   interface Window {
@@ -39,6 +62,12 @@ declare global {
       graph(): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }>;
       settings(): Promise<Record<string, unknown>>;
       recentEvents(): Promise<BrainEvent[]>;
+      skills(): Promise<SkillDef[]>;
+      skillTerritories(): Promise<SkillTerritory[]>;
+      skillOverlaps(): Promise<Array<{ id: string; skills: string[]; weight: number }>>;
+      skillFile(name: string): Promise<(SkillDef & { content: string }) | null>;
+      saveSkill(name: string, content: string): Promise<boolean>;
+      openSkillFile(name: string): Promise<void>;
       note(id: string): Promise<NoteDto | null>;
       notes(): Promise<NoteDto[]>;
       search(q: string, limit?: number): Promise<SearchHit[]>;
@@ -50,6 +79,7 @@ declare global {
       reregister(): Promise<unknown>;
       revealVault(): Promise<void>;
       pickFiles(): Promise<string[]>;
+      pickFolder(): Promise<string[]>;
       importFiles(files: string[], mode: 'verbatim' | 'distill'): Promise<{
         imported: number; skipped: number; failed: number;
         results: Array<{ file: string; id?: string; status: string; detail?: string }>;
@@ -68,6 +98,8 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const graph = new BrainGraph($<HTMLCanvasElement>('graph'));
 let allNotes: NoteDto[] = [];
 let selectedId: string | null = null;
+/** Non-null when the detail panel is showing a SKILL.md rather than a note. */
+let selectedSkill: string | null = null;
 
 /* ---------------- rendering helpers ---------------- */
 
@@ -78,13 +110,46 @@ function escapeHtml(s: string): string {
 }
 
 /** Deliberately minimal markdown. Escape first, then add a few safe affordances. */
+/**
+ * Render TeX with KaTeX. Bundled rather than loaded from a CDN because the
+ * renderer's CSP is `script-src 'self'` - and because the brain has to work
+ * with no network at all.
+ */
+function renderTex(tex: string, display: boolean): string {
+  try {
+    return katex.renderToString(tex, { displayMode: display, throwOnError: false, output: 'html' });
+  } catch {
+    // A malformed expression should cost its own line, not the whole note.
+    return `<code class="tex-bad">${escapeHtml(tex)}</code>`;
+  }
+}
+
 function renderMarkdown(md: string): string {
-  return escapeHtml(md)
+  // Math comes out first: escapeHtml would mangle its backslashes and angle
+  // brackets, and the code/bold passes would chew through it. Placeholders use
+  // NUL so nothing downstream can match or escape them.
+  const math: string[] = [];
+  const stash = (tex: string, display: boolean): string =>
+    `\u0000M${math.push(renderTex(tex, display)) - 1}\u0000`;
+
+  const pulled = md
+    // Swallow the blank lines around a display block: the body is pre-wrap, so
+    // they would render on top of KaTeX's own block margin and double the gap.
+    .replace(/[ \t]*\n{0,2}[ \t]*\$\$([\s\S]+?)\$\$[ \t]*\n{0,2}[ \t]*/g, (_m, tex: string) =>
+      stash(tex.trim(), true)
+    )
+    // Single $ only when it neither abuts another $ nor spans a line break,
+    // so prose like "$5" or "a $ b" is left alone.
+    .replace(/(?<![$\\])\$([^$\n]+?)\$(?!\$)/g, (_m, tex: string) => stash(tex.trim(), false));
+
+  const html = escapeHtml(pulled)
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/^# (.+)$/gm, '<h3>$1</h3>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  return html.replace(/\u0000M(\d+)\u0000/g, (_m, i: string) => math[Number(i)] ?? '');
 }
 
 function timeAgo(ts: number): string {
@@ -153,6 +218,8 @@ async function selectNote(id: string): Promise<void> {
   const note = await window.brain.note(id);
   if (!note) return;
   selectedId = id;
+  selectedSkill = null;
+  $('btn-delete').classList.remove('hidden');
   graph.selected = id;
 
   const f = note.frontmatter;
@@ -199,7 +266,68 @@ async function selectNote(id: string): Promise<void> {
   renderNoteList(allNotes);
 }
 
+/** Open a skill's SKILL.md in the same panel notes use, editable the same way. */
+async function selectSkill(name: string): Promise<void> {
+  const skill = await window.brain.skillFile(name);
+  if (!skill) return;
+
+  selectedSkill = name;
+  selectedId = null;
+  graph.selected = null;
+
+  $('detail-title').textContent = skill.name;
+
+  const meta = $('detail-meta');
+  meta.innerHTML = '';
+  const line1 = document.createElement('div');
+  line1.innerHTML =
+    `<code>${escapeHtml(skill.shape)}</code> &middot; ${escapeHtml(skill.scope)} skill` +
+    (skill.project ? ` &middot; ${escapeHtml(skill.project.split('/').pop() ?? '')}` : '');
+  meta.appendChild(line1);
+  const line2 = document.createElement('div');
+  line2.style.marginTop = '4px';
+  line2.innerHTML = `<code>${escapeHtml(skill.path)}</code>`;
+  meta.appendChild(line2);
+
+  // Where this skill keeps working - accumulated over runs, not one search.
+  const terr = skillTerritory.get(name);
+  if (terr && terr.notes.length > 0) {
+    const line3 = document.createElement('div');
+    line3.style.marginTop = '6px';
+    line3.textContent =
+      `Works in ${terr.notes.length} note${terr.notes.length === 1 ? '' : 's'} ` +
+      `over ${terr.runs} run${terr.runs === 1 ? '' : 's'}:`;
+    meta.appendChild(line3);
+
+    const line4 = document.createElement('div');
+    line4.style.marginTop = '5px';
+    for (const n of terr.notes.slice(0, 8)) {
+      const chip = document.createElement('span');
+      chip.className = 'link-chip';
+      chip.textContent = n.id;
+      chip.title = `weight ${n.weight}`;
+      chip.addEventListener('click', () => {
+        void selectNote(n.id);
+        graph.focus(n.id);
+      });
+      line4.appendChild(chip);
+    }
+    meta.appendChild(line4);
+  }
+
+  currentBody = skill.content;
+  currentTitle = skill.name;
+  if (editing) setEditing(false);
+  $('detail-body').innerHTML = renderMarkdown(skill.content);
+  // A skill's file is Claude's, not the vault's - Edith will not delete it.
+  $('btn-delete').classList.add('hidden');
+  $('detail').classList.remove('hidden');
+  renderSkills();
+}
+
 function closeDetail(): void {
+  selectedSkill = null;
+  $('btn-delete').classList.remove('hidden');
   $('detail').classList.add('hidden');
   selectedId = null;
   graph.selected = null;
@@ -262,10 +390,28 @@ let detailTimer: number | undefined;
  * so this pulses per turn rather than streaming, and lapses to standby after
  * a quiet period rather than the instant a turn ends.
  */
+let presenceActive = false;
+
+/**
+ * One light, painted in two places: the rail's connection icon, and the head
+ * of the Connection pane. Kept in a variable so opening the pane can restore
+ * the current state rather than waiting for the next event to repaint it.
+ *
+ * This says whether Claude is *working*, which is a different question from
+ * whether it is connected - the rows below answer that. So the banner names
+ * its subject and uses working/idle rather than words that read as a link
+ * being up or down.
+ */
+function paintPresence(active: boolean): void {
+  $('rail-connection').classList.toggle('live', active);
+  $('conn-status').classList.toggle('live', active);
+  $('conn-status-text').textContent = active ? 'working' : 'idle';
+  $('conn-status-note').textContent = active ? '' : 'quiet for 45s';
+}
+
 function setPresence(active: boolean): void {
-  const el = $('presence');
-  el.classList.toggle('active', active);
-  $('presence-text').textContent = active ? 'Edith active' : 'Edith on standby';
+  presenceActive = active;
+  paintPresence(active);
 
   window.clearTimeout(presenceTimer);
   if (active) {
@@ -298,6 +444,10 @@ function logActivity(e: BrainEvent): void {
       cls = 'ev-saved';
       text = `saved ${e.noteIds.join(', ')}`;
       break;
+    case 'skill':
+      cls = 'ev-considered';
+      text = `${e.skill} traced ${e.noteIds.length} node${e.noteIds.length === 1 ? '' : 's'}`;
+      break;
     case 'ingest-progress':
       text = `${e.label} ${e.done}/${e.total}`;
       break;
@@ -328,6 +478,22 @@ async function refreshGraph(): Promise<void> {
   graph.setData(g.nodes, g.edges);
   renderCatLegend();
   $('empty').classList.toggle('hidden', g.nodes.length > 0);
+  await hydrateSkills();
+  await loadSkills();
+}
+
+/**
+ * Rebuild the skills menu from the event history, so a renderer reload does not
+ * empty it. The bus keeps its history in the main process for the app's life.
+ */
+async function hydrateSkills(): Promise<void> {
+  try {
+    for (const e of await window.brain.recentEvents()) {
+      if (e.type === 'skill') void recordSkill();
+    }
+  } catch {
+    // history is a convenience; the menu fills from live events either way
+  }
 }
 
 /** Category chips: click to spotlight a cluster, click again to release it. */
@@ -399,7 +565,8 @@ $<HTMLInputElement>('search').addEventListener('input', (e) => {
 $('detail-close').addEventListener('click', closeDetail);
 
 $('btn-open-file').addEventListener('click', () => {
-  if (selectedId) void window.brain.openNoteFile(selectedId);
+  if (selectedSkill) void window.brain.openSkillFile(selectedSkill);
+  else if (selectedId) void window.brain.openNoteFile(selectedId);
 });
 
 $('btn-delete').addEventListener('click', async () => {
@@ -412,31 +579,18 @@ $('btn-delete').addEventListener('click', async () => {
 
 $('btn-vault').addEventListener('click', () => void window.brain.revealVault());
 
-$('btn-backfill').addEventListener('click', async () => {
-  const btn = $<HTMLButtonElement>('btn-backfill');
-  btn.disabled = true;
-  btn.textContent = 'Scanning';
-  try {
-    const r = await window.brain.backfill();
-    logActivity({
-      type: 'status',
-      message: `Backfill queued ${r.queued} session(s), skipped ${r.skipped}`,
-      level: 'info',
-      at: Date.now()
-    });
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Backfill';
-  }
-});
 
 /* ---------------- import ---------------- */
 
 let pendingFiles: string[] = [];
 
+/**
+ * Imports keep the file as written. Distilling costs an API call and the
+ * product's whole premise is that you do not need a key - ask Claude to distil
+ * instead, or turn on background distilling in Settings.
+ */
 function importMode(): 'verbatim' | 'distill' {
-  const checked = document.querySelector<HTMLInputElement>('input[name="imode"]:checked');
-  return checked?.value === 'distill' ? 'distill' : 'verbatim';
+  return 'verbatim';
 }
 
 function importMessage(msg: string, kind: 'info' | 'good' | 'bad' = 'info'): void {
@@ -446,6 +600,12 @@ function importMessage(msg: string, kind: 'info' | 'good' | 'bad' = 'info'): voi
   el.classList.remove('hidden');
 }
 
+/** Extensions the importer can actually read today. */
+const SUPPORTED = new Set(['md', 'markdown', 'txt', 'mdx']);
+
+/** Types the UI accepts staging for, but cannot ingest yet. */
+const PLANNED = new Set(['pdf', 'docx', 'epub', 'rtf', 'doc', 'pages']);
+
 function renderPendingFiles(): void {
   const box = $('import-files');
   box.innerHTML = '';
@@ -453,34 +613,112 @@ function renderPendingFiles(): void {
     box.classList.add('hidden');
     return;
   }
+
   for (const f of pendingFiles) {
+    const name = f.split('/').pop() ?? f;
+    const ext = (name.split('.').pop() ?? '').toLowerCase();
+    const ok = SUPPORTED.has(ext);
+
     const row = document.createElement('div');
-    row.textContent = f.split('/').pop() ?? f;
+    row.className = ok ? 'file-row' : 'file-row unsupported';
+
+    const fname = document.createElement('span');
+    fname.className = 'fname';
+    fname.textContent = name;
+    fname.title = f;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = ext.toUpperCase() || 'FILE';
+
+    const state = document.createElement('span');
+    state.className = 'state';
+    state.textContent = ok ? 'ready' : PLANNED.has(ext) ? 'not yet' : 'unsupported';
+
+    const drop = document.createElement('button');
+    drop.className = 'drop';
+    drop.textContent = '\u00d7';
+    drop.title = 'Remove';
+    drop.addEventListener('click', () => {
+      pendingFiles = pendingFiles.filter((p) => p !== f);
+      renderPendingFiles();
+    });
+
+    row.append(fname, badge, state, drop);
     box.appendChild(row);
   }
   box.classList.remove('hidden');
 }
 
-function resetImport(): void {
-  pendingFiles = [];
-  renderPendingFiles();
-  $<HTMLInputElement>('import-title').value = '';
-  $<HTMLTextAreaElement>('import-body').value = '';
-  $('import-msg').classList.add('hidden');
-  const verbatim = document.querySelector<HTMLInputElement>('input[name="imode"][value="verbatim"]');
-  if (verbatim) verbatim.checked = true;
+/** Files / Paste / Link. Only one source is offered at a time. */
+function showSource(which: 'files' | 'paste' | 'link'): void {
+  for (const k of ['files', 'paste', 'link'] as const) {
+    $(`pane-${k}`).classList.toggle('hidden', k !== which);
+    const tab = $(`src-${k}`);
+    tab.classList.toggle('active', k === which);
+    tab.setAttribute('aria-selected', String(k === which));
+  }
 }
 
-$('btn-import').addEventListener('click', async () => {
+$('src-files').addEventListener('click', () => showSource('files'));
+$('src-paste').addEventListener('click', () => showSource('paste'));
+$('src-link').addEventListener('click', () => showSource('link'));
+
+// Drag and drop stages files the same way the picker does. Electron exposes the
+// real path on the dropped File, which is what the importer needs.
+const zone = $('import-drop');
+for (const ev of ['dragenter', 'dragover'] as const) {
+  zone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    zone.classList.add('dragging');
+  });
+}
+for (const ev of ['dragleave', 'drop'] as const) {
+  zone.addEventListener(ev, () => zone.classList.remove('dragging'));
+}
+zone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const dropped = [...((e as DragEvent).dataTransfer?.files ?? [])]
+    .map((f) => (f as File & { path?: string }).path)
+    .filter((p): p is string => Boolean(p));
+  // A dropped folder has no extension and cannot be read here; the picker is
+  // the path for those, so say so rather than staging something unusable.
+  const looksLikeFolder = dropped.filter((d) => !/\.[a-z0-9]+$/i.test(d));
+  stage(dropped.filter((d) => !looksLikeFolder.includes(d)));
+  if (looksLikeFolder.length > 0) {
+    importMessage('Use "Add a folder instead" to bring in a whole folder.');
+  }
+});
+
+function resetImport(): void {
+  showSource('files');
+  pendingFiles = [];
+  renderPendingFiles();
+  $<HTMLTextAreaElement>('import-body').value = '';
+  $('import-msg').classList.add('hidden');
+}
+
+$('rail-add').addEventListener('click', async () => {
   resetImport();
-  // Distilling needs an API key; make that visible rather than failing later.
-  const status = await window.brain.status();
-  const distillLabel = document.querySelector<HTMLLabelElement>('.mode-choice label.row:nth-child(2)');
-  const distillInput = document.querySelector<HTMLInputElement>('input[name="imode"][value="distill"]');
-  if (distillInput) distillInput.disabled = !status.hasApiKey;
-  distillLabel?.classList.toggle('disabled', !status.hasApiKey);
-  if (!status.hasApiKey) importMessage('Add an API key in Settings to distill. Files can still be imported as written.');
-  $('import').classList.remove('hidden');
+  showPane('add');
+});
+
+/** Merge a pick into the staged list without duplicating what is already there. */
+function stage(files: string[]): void {
+  if (files.length === 0) return;
+  pendingFiles = [...new Set([...pendingFiles, ...files])];
+  renderPendingFiles();
+  $('import-msg').classList.add('hidden');
+}
+
+$('import-pick-folder').addEventListener('click', async () => {
+  const files = await window.brain.pickFolder();
+  if (files.length === 0) {
+    importMessage('Nothing to read in there \u2014 no .md, .txt or .mdx files.');
+    return;
+  }
+  stage(files);
+  importMessage(`Found ${files.length} file${files.length === 1 ? '' : 's'} in that folder.`, 'good');
 });
 
 $('import-pick').addEventListener('click', async () => {
@@ -492,11 +730,9 @@ $('import-pick').addEventListener('click', async () => {
   }
 });
 
-$('import-cancel').addEventListener('click', () => $('import').classList.add('hidden'));
 
 $('import-go').addEventListener('click', async () => {
   const btn = $<HTMLButtonElement>('import-go');
-  const title = $<HTMLInputElement>('import-title').value;
   const body = $<HTMLTextAreaElement>('import-body').value;
   const mode = importMode();
 
@@ -516,45 +752,163 @@ $('import-go').addEventListener('click', async () => {
       if (r.failed) parts.push(`${r.failed} failed`);
     }
     if (body.trim()) {
-      const r = await window.brain.importText(title, body, mode);
+      const r = await window.brain.importText('', body, mode);
       parts.push(`${r.ids.length} note(s) from pasted text`);
     }
     importMessage(`Added ${parts.join(', ')}.`, 'good');
     pendingFiles = [];
     renderPendingFiles();
     $<HTMLTextAreaElement>('import-body').value = '';
-    $<HTMLInputElement>('import-title').value = '';
     await refreshAll();
   } catch (err) {
     importMessage(err instanceof Error ? err.message : String(err), 'bad');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Add to brain';
+    btn.textContent = 'Add';
   }
 });
 
 /* settings modal */
-$('btn-settings').addEventListener('click', async () => {
-  const s = await window.brain.settings();
-  $<HTMLInputElement>('set-key').value = String(s.apiKey ?? '');
-  $<HTMLInputElement>('set-model').value = String(s.model ?? '');
-  $<HTMLInputElement>('set-minturns').value = String(s.minTurns ?? 4);
-  $<HTMLInputElement>('set-auto').checked = Boolean(s.autoDistill);
-  $('settings').classList.remove('hidden');
-});
+/* ---------------- skills ---------------- */
 
-$('set-cancel').addEventListener('click', () => $('settings').classList.add('hidden'));
+/**
+ * Skills that have consulted the brain, newest first. Each keeps the notes its
+ * last search touched and the shape it declared, so hovering the pane can
+ * re-draw that figure without re-running the search.
+ */
+const skillsDeclared = new Map<string, SkillDef>();
+/** Where each skill keeps working. Accumulated across runs, not one search. */
+const skillTerritory = new Map<string, SkillTerritory>();
 
-$('set-save').addEventListener('click', async () => {
-  await window.brain.updateSettings({
-    apiKey: $<HTMLInputElement>('set-key').value.trim(),
-    model: $<HTMLInputElement>('set-model').value.trim(),
-    minTurns: Number($<HTMLInputElement>('set-minturns').value) || 4,
-    autoDistill: $<HTMLInputElement>('set-auto').checked
-  });
-  $('settings').classList.add('hidden');
-  renderStatus(await window.brain.status());
-});
+/** What each shape says about how the skill works. */
+const SHAPE_GLYPH: Record<SkillShape, string> = {
+  chain: '\u2500\u25CF',
+  loop: '\u25EF',
+  hub: '\u2733',
+  spiral: '\u25CC'
+};
+
+const SHAPE_BLURB: Record<SkillShape, string> = {
+  chain: 'sequential steps',
+  loop: 'returns and repeats',
+  hub: 'one idea against each',
+  spiral: 'revisited, closer in'
+};
+
+/** A run just landed; re-read the territory it folded into. */
+async function recordSkill(): Promise<void> {
+  await loadTerritories();
+  if (!$('skill-list').classList.contains('hidden')) renderSkills();
+}
+
+async function loadTerritories(): Promise<void> {
+  try {
+    skillTerritory.clear();
+    for (const t of await window.brain.skillTerritories()) skillTerritory.set(t.skill, t);
+  } catch {
+    // the pane still lists declared skills without their territories
+  }
+}
+
+/** Read the declared skills off disk. They exist here before they ever run. */
+async function loadSkills(): Promise<void> {
+  try {
+    for (const s of await window.brain.skills()) skillsDeclared.set(s.name, s);
+    await loadTerritories();
+  } catch {
+    // discovery is a convenience; the pane still fills from live usage
+  }
+  if (!$('skill-list').classList.contains('hidden')) renderSkills();
+}
+
+function renderSkills(): void {
+  const list = $('skill-list');
+  list.innerHTML = '';
+
+  // Everything declared on disk, plus anything with a territory whose
+  // SKILL.md we could not find.
+  const names = new Set([...skillsDeclared.keys(), ...skillTerritory.keys()]);
+  if (names.size === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = 'No skills found. Write one at .claude/skills/<name>/SKILL.md.';
+    list.appendChild(empty);
+    return;
+  }
+
+  const ordered = [...names].sort((a, b) => a.localeCompare(b));
+
+  for (const name of ordered) {
+    const def = skillsDeclared.get(name);
+
+    const item = document.createElement('div');
+    item.className = 'skill-item';
+    if (def) item.title = def.description;
+
+    const label = document.createElement('span');
+    label.className = 'n';
+    label.textContent = name;
+    item.append(label);
+
+    // Declared skills open their SKILL.md; one we only know by name has no file.
+    if (def) {
+      item.classList.add('openable');
+      if (name === selectedSkill) item.classList.add('active');
+      item.addEventListener('click', () => void selectSkill(name));
+    }
+    list.appendChild(item);
+  }
+}
+
+type Section = 'add' | 'memories' | 'skills' | 'connection';
+
+/** Which section the panel is showing, or null when it is folded away. */
+let openSection: Section | null = 'memories';
+
+const SECTION_TITLE: Record<Section, string> = {
+  add: 'Add',
+  memories: 'Memories',
+  skills: 'Skills',
+  connection: 'Connection'
+};
+
+/**
+ * Mount a section in the panel. Passing the section already open folds the
+ * panel away instead, which is what pressing its rail button again does.
+ */
+function showPane(which: Section): void {
+  openSection = openSection === which ? null : which;
+
+  $('app').classList.toggle('panel-collapsed', openSection === null);
+  for (const k of ['add', 'memories', 'skills', 'connection'] as const) {
+    const btn = $(`rail-${k}`);
+    btn.classList.toggle('active', openSection === k);
+    btn.setAttribute('aria-expanded', String(openSection === k));
+  }
+
+  if (openSection === null) {
+    graph.setPanelInset(false);
+    return;
+  }
+
+  $('panel-title').textContent = SECTION_TITLE[openSection];
+  // Search belongs to memories; the other sections are short or are forms.
+  $('search-wrap').classList.toggle('hidden', openSection !== 'memories');
+  $('note-list').classList.toggle('hidden', openSection !== 'memories');
+  $('skill-list').classList.toggle('hidden', openSection !== 'skills');
+  $('add-pane').classList.toggle('hidden', openSection !== 'add');
+  $('connection-pane').classList.toggle('hidden', openSection !== 'connection');
+  graph.setPanelInset(true);
+  if (openSection === 'skills') renderSkills();
+  if (openSection === 'connection') void renderConnection();
+}
+
+$('rail-memories').addEventListener('click', () => showPane('memories'));
+$('rail-skills').addEventListener('click', () => showPane('skills'));
+
+
+
+
 
 /* live events - this is the lighting up */
 let legendTimer: number | undefined;
@@ -591,8 +945,23 @@ function setEditing(on: boolean): void {
 }
 
 async function saveEdit(): Promise<void> {
-  if (!selectedId) return;
   const body = $<HTMLTextAreaElement>('detail-editor').value;
+
+  // A skill is one whole file - frontmatter included - so it round-trips
+  // verbatim rather than being split into title and body the way a note is.
+  if (selectedSkill) {
+    const ok = await window.brain.saveSkill(selectedSkill, body);
+    if (ok) {
+      currentBody = body;
+      $('detail-body').innerHTML = renderMarkdown(body);
+      skillsDeclared.clear();
+      await loadSkills(); // frontmatter may have changed the shape
+    }
+    setEditing(false);
+    return;
+  }
+
+  if (!selectedId) return;
   const title = ($('detail-title').textContent ?? '').trim();
   const updated = await window.brain.updateNote(selectedId, { title, body });
   if (updated) {
@@ -624,7 +993,7 @@ function connRow(k: string, v: string, cls = ''): string {
   return `<div class="conn-row"><span class="conn-k">${escapeHtml(k)}</span><span class="conn-v ${cls}">${escapeHtml(v)}</span></div>`;
 }
 
-async function openConnection(): Promise<void> {
+async function renderConnection(): Promise<void> {
   const s = await window.brain.status();
   const registered = s.registrations.filter(
     (r) => r.status === 'registered' || r.status === 'already-current'
@@ -656,24 +1025,25 @@ async function openConnection(): Promise<void> {
 
   $('conn-rows').innerHTML = rows;
 
-  const note = document.createElement('div');
-  note.className = 'conn-note';
-  note.textContent = hookOk
-    ? 'Changes to registration only take effect in a new Claude session. Restart Claude Code if something looks stale.'
-    : 'Without the session primer Claude will rarely consult Edith on its own.';
-  $('conn-rows').appendChild(note);
-
-  $('connection').classList.remove('hidden');
+  // Only say something when something is wrong. When the primer is missing
+  // Claude will rarely consult Edith at all, which is worth interrupting for;
+  // when everything is healthy the rows above already say so.
+  if (!hookOk) {
+    const note = document.createElement('div');
+    note.className = 'conn-note';
+    note.textContent = 'Without the session primer Claude will rarely consult Edith on its own.';
+    $('conn-rows').appendChild(note);
+  }
+  paintPresence(presenceActive);
 }
 
-$('presence').addEventListener('click', () => void openConnection());
-$('conn-close').addEventListener('click', () => $('connection').classList.add('hidden'));
+$('rail-connection').addEventListener('click', () => showPane('connection'));
 $('conn-reregister').addEventListener('click', async () => {
   const btn = $<HTMLButtonElement>('conn-reregister');
   btn.disabled = true;
   try {
     await window.brain.reregister();
-    await openConnection();
+    await renderConnection();
   } finally {
     btn.disabled = false;
   }
@@ -691,12 +1061,17 @@ window.brain.onEvent((e) => {
   } else if (e.type === 'saved') {
     graph.activate(e.noteIds, 'saved');
     showStateLegend();
+  } else if (e.type === 'skill') {
+    graph.traceSkill(e.skill, e.noteIds, skillsDeclared.get(e.skill)?.shape ?? 'chain');
+    void recordSkill();
+    showStateLegend();
   } else if (e.type === 'session-active') {
     setPresence(true);
   }
 
   // Any brain traffic at all means Claude is working right now.
-  if (e.type === 'considered' || e.type === 'opened' || e.type === 'saved') setPresence(true);
+  if (e.type === 'considered' || e.type === 'opened' || e.type === 'saved' || e.type === 'skill')
+    setPresence(true);
 
   logActivity(e);
 });
@@ -717,8 +1092,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Escape') {
     closeDetail();
-    $('connection').classList.add('hidden');
-    $('settings').classList.add('hidden');
+    showPane('memories');
     $('import').classList.add('hidden');
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'f') {

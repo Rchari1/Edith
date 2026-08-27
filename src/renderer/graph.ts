@@ -62,6 +62,27 @@ interface Ripple {
   color: string;
 }
 
+/**
+ * A skill that consulted the brain, drawn as a path threading the notes it
+ * touched. `ids` is ordered once at creation into a short route, so the line
+ * stays stable while the notes themselves keep drifting on the flow.
+ */
+type SkillShape = 'chain' | 'loop' | 'hub' | 'spiral';
+
+interface SkillPath {
+  skill: string;
+  /** How the skill works, and so how its figure is drawn. */
+  shape: SkillShape;
+  /** Ordered for the shape: a route for chain/loop, hub-first for hub, inward for spiral. */
+  ids: string[];
+  /** Notes drift on the flow, so the ordering is re-derived on this countdown. */
+  reflow: number;
+  /** 0 -> 1 over the path's life, then it is dropped. */
+  t: number;
+  /** Position of the travelling light along the route. */
+  phase: number;
+}
+
 interface Star {
   x: number;
   y: number;
@@ -115,10 +136,14 @@ const COLORS = {
   accent: '#ffffff',
   considered: '#c4c4c4',
   opened: '#ffffff',
-  saved: '#e0e0e0'
+  saved: '#e0e0e0',
+  skill: '#cfcfcf'
 };
 
 const TWO_PI = Math.PI * 2;
+
+/** How often a skill figure re-derives its ordering as the notes drift. */
+const REFLOW_MS = 2600;
 
 function hexToRgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -192,6 +217,7 @@ export class BrainGraph {
 
   private stars: Star[] = [];
   private ripples: Ripple[] = [];
+  private skillPaths: SkillPath[] = [];
   private murmurTimer = 0;
 
   /** Camera orbit around the vertical axis through the shape's center. */
@@ -200,6 +226,10 @@ export class BrainGraph {
   private pitch = 0.16;
   private lastInteract = -Infinity;
   private targetYaw: number | null = null;
+
+  /** Horizontal offset that keeps the shape clear of the rail and panel. */
+  private panelNudge = 172;
+  private panelNudgeTarget = 172;
 
   private scale = 1;
   private offsetX = 0;
@@ -334,6 +364,277 @@ export class BrainGraph {
       if (this.ripples.length > 40) this.ripples.shift();
       this.ripples.push({ id, t: 0, color });
     }
+  }
+
+  /**
+   * Draw a skill as a path connecting the notes it touched, and light those
+   * notes. Re-invoking the same skill redraws its path rather than stacking a
+   * second line on top.
+   */
+  traceSkill(skill: string, ids: string[], shape: SkillShape = 'chain'): void {
+    const route = this.arrange(ids, shape);
+    if (route.length === 0) return;
+    const existing = this.skillPaths.find((o) => o.skill === skill);
+    if (existing) {
+      existing.ids = route;
+      existing.shape = shape;
+      existing.t = 0;
+    } else {
+      if (this.skillPaths.length >= 4) this.skillPaths.shift();
+      this.skillPaths.push({ skill, shape, ids: route, t: 0, phase: 0, reflow: REFLOW_MS });
+    }
+    this.activate(route, 'considered');
+  }
+
+  /**
+   * Order notes to suit the figure being drawn. The ordering is half the
+   * shape: a hub wants its centre first, a spiral wants radial order, and a
+   * chain or loop wants a route that does not cross itself.
+   */
+  private arrange(ids: string[], shape: SkillShape): string[] {
+    const known = ids.filter((id) => this.bodies.has(id));
+    if (known.length === 0) return [];
+
+    // Hub: the most-connected note anchors the centre, the rest fan out from it.
+    if (shape === 'hub') {
+      const sorted = [...known].sort(
+        (a, b) => (this.bodies.get(b)?.degree ?? 0) - (this.bodies.get(a)?.degree ?? 0)
+      );
+      return sorted;
+    }
+
+    // Spiral: outermost first, winding inward toward the centre of mass.
+    if (shape === 'spiral') {
+      const bodies = known.map((id) => this.bodies.get(id)).filter((b): b is Body => !!b);
+      const mx = bodies.reduce((n, b) => n + b.x, 0) / bodies.length;
+      const my = bodies.reduce((n, b) => n + b.y, 0) / bodies.length;
+      const mz = bodies.reduce((n, b) => n + b.z, 0) / bodies.length;
+      return [...known].sort(
+        (a, b) =>
+          this.radial(this.bodies.get(b), mx, my, mz) - this.radial(this.bodies.get(a), mx, my, mz)
+      );
+    }
+
+    // Chain and loop: nearest-unvisited walk, so the line does not crisscross.
+    const remaining = known.slice(1);
+    const route = [known[0] as string];
+    while (remaining.length > 0) {
+      const from = this.bodies.get(route[route.length - 1] as string);
+      let bestI = 0;
+      let bestD = Infinity;
+      remaining.forEach((id, i) => {
+        const b = this.bodies.get(id);
+        if (!b || !from) return;
+        const d = Math.hypot(b.x - from.x, b.y - from.y, b.z - from.z);
+        if (d < bestD) {
+          bestD = d;
+          bestI = i;
+        }
+      });
+      route.push(remaining.splice(bestI, 1)[0] as string);
+    }
+    return route;
+  }
+
+  /**
+   * Notes keep drifting after the figure is drawn, and a route fixed at one
+   * instant slowly knots itself. Re-derive the ordering on a slow tick so the
+   * shape stays legible for as long as it is on screen.
+   */
+  private reflow(o: SkillPath, dt: number): void {
+    o.reflow -= dt;
+    if (o.reflow > 0) return;
+    o.reflow = REFLOW_MS;
+    o.ids = this.arrange(o.ids, o.shape);
+  }
+
+  private radial(b: Body | undefined, mx: number, my: number, mz: number): number {
+    if (!b) return 0;
+    return Math.hypot(b.x - mx, b.y - my, b.z - mz);
+  }
+
+  /**
+   * A skill's path through the brain: a smooth line threading the notes it
+   * touched, with a light running its length. Built from the notes' live world
+   * positions each frame, so the line breathes with the shape instead of
+   * sitting frozen on the glass.
+   */
+  private drawSkillPaths(ctx: CanvasRenderingContext2D): void {
+    for (const o of this.skillPaths) {
+      const members = o.ids.map((id) => this.bodies.get(id)).filter((b): b is Body => !!b);
+      if (members.length < 2) continue;
+
+      // Ease in, hold, fade - so the path is drawn rather than switched on.
+      const life = o.t < 0.08 ? o.t / 0.08 : o.t > 0.72 ? (1 - o.t) / 0.28 : 1;
+      const alpha = Math.max(0, Math.min(1, life));
+      if (alpha <= 0.001) continue;
+
+      // Hub: a centre checked against each of the others. Spokes, not a route,
+      // with the light going out and back along one spoke at a time.
+      if (o.shape === 'hub') {
+        const hub = members[0];
+        const spokes = members.slice(1);
+        if (!hub || spokes.length === 0) continue;
+
+        ctx.lineWidth = 1;
+        for (const b of spokes) {
+          ctx.globalAlpha = alpha * 0.3 * this.depthAlpha((hub.pd + b.pd) / 2);
+          ctx.strokeStyle = COLORS.skill;
+          ctx.beginPath();
+          ctx.moveTo(hub.px, hub.py);
+          ctx.lineTo(b.px, b.py);
+          ctx.stroke();
+        }
+
+        // One spoke at a time: out from the hub, then back.
+        const span = 1 / spokes.length;
+        const which = Math.min(spokes.length - 1, Math.floor(o.phase / span));
+        const within = (o.phase - which * span) / span;
+        const target = spokes[which];
+        if (target) {
+          const k = within < 0.5 ? within * 2 : (1 - within) * 2;
+          for (let n = 0; n < 10; n++) {
+            const kk = Math.max(0, k - n * 0.02);
+            ctx.globalAlpha = alpha * (1 - n / 10) * 0.6 * this.depthAlpha(target.pd);
+            ctx.fillStyle = COLORS.accent;
+            ctx.beginPath();
+            ctx.arc(
+              hub.px + (target.px - hub.px) * kk,
+              hub.py + (target.py - hub.py) * kk,
+              (n === 0 ? 2 : 1.1) * target.pd,
+              0,
+              TWO_PI
+            );
+            ctx.fill();
+          }
+        }
+
+        for (const b of members) {
+          ctx.globalAlpha = alpha * (b === hub ? 0.75 : 0.5) * this.depthAlpha(b.pd);
+          ctx.strokeStyle = COLORS.skill;
+          ctx.beginPath();
+          ctx.arc(b.px, b.py, (b === hub ? 8 : 5) * b.pd, 0, TWO_PI);
+          ctx.stroke();
+        }
+        continue;
+      }
+
+      // Knots in WORLD space. Splining on the projected points would flatten the
+      // figure onto the glass; interpolating in three dimensions and projecting
+      // each sample keeps it a solid object that foreshortens with the camera.
+      const knots = members.map((b) => ({ x: b.x, y: b.y, z: b.z }));
+
+      // A loop closes on itself: the work returns to where it began.
+      if (o.shape === 'loop' && knots.length > 2) {
+        const first = knots[0];
+        if (first) knots.push({ ...first });
+      }
+
+      // Centre of the figure, used to bow each span away from the middle so the
+      // route arcs through space instead of collapsing toward a straight line.
+      let mx = 0;
+      let my = 0;
+      let mz = 0;
+      for (const k of knots) {
+        mx += k.x;
+        my += k.y;
+        mz += k.z;
+      }
+      mx /= knots.length;
+      my /= knots.length;
+      mz /= knots.length;
+
+      const SEG = 20;
+      const pts: { x: number; y: number; pd: number }[] = [];
+      for (let i = 0; i < knots.length - 1; i++) {
+        const p0 = knots[i - 1] ?? knots[i];
+        const p1 = knots[i];
+        const p2 = knots[i + 1];
+        const p3 = knots[i + 2] ?? knots[i + 1];
+        if (!p0 || !p1 || !p2 || !p3) continue;
+
+        // Bow height scales with the span, so long hops arc and short ones stay tight.
+        const span = Math.hypot(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+        const bow = Math.min(70, span * 0.22);
+
+        for (let k = 0; k < SEG; k++) {
+          const t = k / SEG;
+          const t2 = t * t;
+          const t3 = t2 * t;
+          const cr = (a: number, b: number, c: number, d: number): number =>
+            0.5 *
+            (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+
+          let wx = cr(p0.x, p1.x, p2.x, p3.x);
+          let wy = cr(p0.y, p1.y, p2.y, p3.y);
+          let wz = cr(p0.z, p1.z, p2.z, p3.z);
+
+          // Push the middle of each span outward from the figure's centre.
+          const lift = Math.sin(t * Math.PI) * bow;
+          if (lift > 0.01) {
+            const ox = wx - mx;
+            const oy = wy - my;
+            const oz = wz - mz;
+            const len = Math.hypot(ox, oy, oz) || 1;
+            wx += (ox / len) * lift;
+            wy += (oy / len) * lift;
+            wz += (oz / len) * lift;
+          }
+
+          pts.push(this.project(wx, wy, wz));
+        }
+      }
+      const tail = knots[knots.length - 1];
+      if (tail) pts.push(this.project(tail.x, tail.y, tail.z));
+      if (pts.length < 2) continue;
+
+      // The line itself, segment by segment so depth can thin the far end.
+      ctx.lineWidth = 1;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        if (!a || !b) continue;
+        ctx.globalAlpha = alpha * 0.34 * this.depthAlpha((a.pd + b.pd) / 2);
+        ctx.strokeStyle = COLORS.skill;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+
+      // A light running the route, with a short comet tail behind it.
+      const head = Math.floor(o.phase * (pts.length - 1));
+      for (let k = 0; k < 14; k++) {
+        const p = pts[head - k];
+        if (!p) continue;
+        ctx.globalAlpha = alpha * (1 - k / 14) * 0.6 * this.depthAlpha(p.pd);
+        ctx.fillStyle = COLORS.accent;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, (k === 0 ? 2 : 1.1) * p.pd, 0, TWO_PI);
+        ctx.fill();
+      }
+
+      // Small ticks on the notes the path actually stops at.
+      for (const b of members) {
+        ctx.globalAlpha = alpha * 0.5 * this.depthAlpha(b.pd);
+        ctx.strokeStyle = COLORS.skill;
+        ctx.beginPath();
+        ctx.arc(b.px, b.py, 5 * b.pd, 0, TWO_PI);
+        ctx.stroke();
+      }
+
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Re-centre the shape for a panel that is open or folded away. The value is
+   * a target rather than an assignment; updateMotion eases toward it so the
+   * whole shape drifts across instead of jumping.
+   */
+  setPanelInset(open: boolean): void {
+    this.panelNudgeTarget = open ? 172 : 30;
   }
 
   /** Swing the camera around until the note faces us, then glide onto it. */
@@ -581,9 +882,12 @@ export class BrainGraph {
 
   private updateMotion(dt: number, t: number): void {
     const rect = this.canvas.getBoundingClientRect();
-    // The canvas runs full-bleed under the glass sidebar; keep the shape
-    // centered in the visible area to its right.
-    this.cx = rect.width / 2 + 150;
+    // The canvas runs full-bleed under the glass; keep the shape centered in
+    // whatever is actually visible beside it. Folding the panel away hands
+    // that width back, so the nudge has to follow.
+    // Ease toward the target so folding the panel drifts the shape across.
+    this.panelNudge += (this.panelNudgeTarget - this.panelNudge) * Math.min(1, dt / 160);
+    this.cx = rect.width / 2 + this.panelNudge;
     this.cy = rect.height / 2;
 
     this.updateCamera(dt, t);
@@ -643,6 +947,14 @@ export class BrainGraph {
 
     for (const r of this.ripples) r.t += dt / 1100;
     this.ripples = this.ripples.filter((r) => r.t < 1);
+
+    // Skill paths outlive a ripple by a long way - they mark a skill, not a glance.
+    for (const o of this.skillPaths) {
+      o.t += dt / 30000;
+      o.phase = (o.phase + dt / 4200) % 1;
+      this.reflow(o, dt);
+    }
+    this.skillPaths = this.skillPaths.filter((o) => o.t < 1);
   }
 
   private lastT = performance.now();
@@ -762,6 +1074,8 @@ export class BrainGraph {
       ctx.arc(b.px, b.py, grow * b.pd, 0, TWO_PI);
       ctx.stroke();
     }
+
+    this.drawSkillPaths(ctx);
     ctx.globalAlpha = 1;
 
     // Lit paths: a hovered note previews its road ahead in cyan; a selected
