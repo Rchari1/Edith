@@ -689,10 +689,10 @@ export class BrainGraph {
     const cx = rect.width / 2;
     const cy = rect.height / 2;
 
-    // Cleared rather than filled, so the neural field behind this canvas shows
+    // Cleared rather than filled, so the starfield behind this canvas shows
     // through. The ground colour now lives on #stage in CSS. This is the only
-    // change to this file for the neural-field experiment - revert this one
-    // block and the Pensieve renders exactly as before.
+    // change to this file - revert this one block and the Pensieve renders
+    // exactly as it did before.
     ctx.clearRect(0, 0, rect.width, rect.height);
 
     ctx.save();

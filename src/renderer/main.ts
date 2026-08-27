@@ -1,5 +1,5 @@
 import { BrainGraph, type GraphNodeData, type GraphEdgeData } from './graph.js';
-import { NeuralField } from './neural-field.js';
+import { Universe } from './universe.js';
 
 interface NoteFrontmatter {
   id: string;
@@ -87,7 +87,7 @@ declare global {
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 const graph = new BrainGraph($<HTMLCanvasElement>('graph'));
-const field = new NeuralField($<HTMLCanvasElement>('neural-field'));
+const universe = new Universe($<HTMLCanvasElement>('universe'));
 let allNotes: NoteDto[] = [];
 let selectedId: string | null = null;
 
@@ -820,8 +820,9 @@ window.brain.onEvent((e) => {
   // Any brain traffic at all means Claude is working right now.
   if (e.type === 'considered' || e.type === 'opened' || e.type === 'saved') {
     setPresence(true);
-    // The field brightens with the graph, so retrieval reads as one event.
-    field.pulse(e.type === 'opened' ? 1 : 0.6);
+    // The sky lifts very slightly with the graph, so retrieval reads as one
+    // event rather than two things happening near each other.
+    universe.pulse(e.type === 'opened' ? 1 : 0.6);
   }
 
   logActivity(e);

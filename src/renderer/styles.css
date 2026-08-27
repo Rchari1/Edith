@@ -145,9 +145,9 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 
 /* ---------- stage: full-bleed galaxy behind the glass ---------- */
 #stage { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
-/* The ambient field sits behind the graph and never takes a click. Its own
-   canvas so the Pensieve renderer is untouched by this experiment. */
-#neural-field {
+/* Deep space sits behind the graph and never takes a click. Its own canvas so
+   the Pensieve renderer is untouched. */
+#universe {
   position: absolute;
   inset: 0;
   width: 100%;
