@@ -10,6 +10,8 @@ import { Forge } from '../core/forge/forge.js';
 import { installProposal, uninstallProposal } from '../core/forge/install.js';
 import { seedStarterSkills } from '../core/forge/starter.js';
 import type { SkillProposal } from '../core/forge/types.js';
+import { discoverSkills, projectRootsFromClaude, type Skill } from '../core/skills/index.js';
+import { SkillAffinity } from '../core/skills/affinity.js';
 import { createThrottle } from '../core/util/throttle.js';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { Distiller } from '../core/distiller/distiller.js';
@@ -74,13 +76,51 @@ export class AppState extends EventEmitter {
   private readonly activityThrottle = createThrottle(1500);
   private lastSessionAt: number | null = null;
 
+  /**
+   * Skills as Claude defines them, read from SKILL.md on disk. Cached because
+   * the scan touches every project transcript; refreshed on demand.
+   */
+  private skillsCache: Skill[] = [];
+  private skillsAt = 0;
+
+  /** Which notes each skill keeps returning to, accumulated across runs. */
+  affinity!: SkillAffinity;
+
   constructor(private readonly userDataDir: string) {
     super();
     this.settingsFile = path.join(userDataDir, 'settings.json');
   }
 
+  /** Discovered skills, re-scanned at most once a minute. */
+  async skills(force = false): Promise<Skill[]> {
+    const age = Date.now() - this.skillsAt;
+    if (!force && this.skillsCache.length > 0 && age < 60_000) return this.skillsCache;
+    try {
+      this.skillsCache = await discoverSkills(await projectRootsFromClaude());
+      this.skillsAt = Date.now();
+    } catch {
+      // Discovery is a convenience; a failed scan keeps whatever was last known.
+    }
+    return this.skillsCache;
+  }
+
+  /** Every skill's territory, with notes that no longer exist filtered out. */
+  territories(): ReturnType<SkillAffinity['all']> {
+    return this.affinity.all((id) => Boolean(this.vault.get(id)));
+  }
+
+  /** Notes more than one skill keeps landing on. */
+  skillOverlaps(): ReturnType<SkillAffinity['overlaps']> {
+    return this.affinity.overlaps((id) => Boolean(this.vault.get(id)));
+  }
+
   async start(): Promise<void> {
     this.settings = await loadSettings(this.settingsFile, this.userDataDir);
+
+    // Kept beside settings rather than in the vault: the vault is Markdown the
+    // user owns, and unlike index.db this cannot be rebuilt from it.
+    this.affinity = new SkillAffinity(path.join(this.userDataDir, 'skill-affinity.json'));
+    await this.affinity.load();
 
     this.vault = new Vault(
       this.settings.vaultPath,
@@ -141,7 +181,10 @@ export class AppState extends EventEmitter {
       new WatcherSessionSource(this.watcher, this.vault),
       this.forge
     );
-    this.server.bus.onEvent((e) => this.emit('event', e));
+    this.server.bus.onEvent((e) => {
+      if (e.type === 'skill') this.affinity.record(e.skill, e.noteIds);
+      this.emit('event', e);
+    });
     await this.server.start();
 
     // Register with whatever Claude surfaces exist. A port change rewrites them.
@@ -478,6 +521,7 @@ export class AppState extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    await this.affinity?.close();
     this.queue?.stop();
     await this.forgeWatcher?.close();
     this.forgeWatcher = null;

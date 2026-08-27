@@ -82,8 +82,23 @@ export interface SearchHit {
 }
 
 /** Emitted on every MCP tool call so the UI can light up. */
+/**
+ * How a skill moves through the brain, drawn as its signature.
+ *
+ * - `chain`  - sequential: one step leads to the next, start to finish
+ * - `loop`   - cyclic: the work returns to where it began and repeats
+ * - `hub`    - radial: one central idea checked against each of the others
+ * - `spiral` - deepening: the same ground revisited at closer range each pass
+ */
+export type SkillShape = 'chain' | 'loop' | 'hub' | 'spiral';
+
 export type BrainEvent =
   | { type: 'considered'; noteIds: string[]; query: string; at: number }
+  /**
+   * A named skill consulted the brain. Renders as a figure through the notes it
+   * touched, whose shape encodes how the skill works - see SkillShape.
+   */
+  | { type: 'skill'; skill: string; noteIds: string[]; query: string; at: number }
   | { type: 'opened'; noteIds: string[]; at: number }
   | { type: 'saved'; noteIds: string[]; at: number }
   | { type: 'vault-changed'; at: number }
