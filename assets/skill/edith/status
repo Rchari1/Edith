@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""
+Rendered status for /edith.
+
+Plain text and box drawing only - no ANSI, because this lands in a transcript
+rather than a terminal and escape codes render literally.
+
+Deliberately has no right-hand border. An earlier framed version was 56 columns
+wide and got cut off in a narrow panel; a layout that only ever grows rightward
+degrades instead of breaking.
+"""
+import json
+import urllib.request
+
+PORTS = (4319, 4320, 4321, 4322)
+
+# Mission-control register. The pair matters as much as the words: "stood down"
+# says resting rather than broken, and an idle Edith genuinely is healthy - a
+# failure state that reads like a crash trains people to ignore it.
+STATUS_UP = "standing by"
+STATUS_DOWN = "stood down"
+
+GLYPH = [
+    "   ╭──╮╭──╮ ",
+    "  ╭╯▪ ││ ▪╰╮",
+    "  │ ├─┤├─┤ │",
+    "  ╰╮▪ ││ ▪╭╯",
+    "   ╰──╯╰──╯ ",
+]
+
+# Memory count grows logarithmically: a brain of 3 notes and one of 300 are
+# different things, and a linear meter that fills at 5 conveys neither.
+MEMORY_TIERS = [1, 100, 500, 2500, 10000]
+# Session activity is small by nature, so it keeps a linear scale.
+BARS = 5
+
+
+def tiered(n, tiers=MEMORY_TIERS, width=BARS):
+    filled = sum(1 for t in tiers if n >= t)
+    return "▰" * filled + "▱" * (width - filled)
+
+
+def linear(done, total, width=BARS):
+    if total <= 0:
+        return "▱" * width
+    filled = min(width, round(done / total * width))
+    return "▰" * filled + "▱" * (width - filled)
+
+
+def get(path):
+    for port in PORTS:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=1) as r:
+                return json.load(r), port
+        except Exception:
+            continue
+    return None, None
+
+
+def render(rows):
+    """Glyph on the left, facts on the right. Pads so the columns line up."""
+    pad = max(len(line) for line in GLYPH) + 2
+    height = max(len(GLYPH), len(rows))
+    for i in range(height):
+        left = GLYPH[i] if i < len(GLYPH) else ""
+        right = rows[i] if i < len(rows) else ""
+        print((left.ljust(pad) + right).rstrip())
+
+
+def main():
+    health, port = get("/health")
+
+    if not health:
+        render([
+            "EDITH · second brain",
+            "",
+            f"\u25cb {STATUS_DOWN}",
+            "",
+            "open the Edith app to restore recall",
+        ])
+        return
+
+    notes = health.get("notes", 0)
+    stats, _ = get("/stats") or (None, None)
+
+    here = 0
+    engaged = "▱" * BARS
+    engaged_label = "no sessions yet"
+    if stats:
+        per = stats.get("perSession") or []
+        if per:
+            here = per[0].get("searches", 0) + per[0].get("reads", 0)
+        seen = stats.get("sessionsSeen", 0)
+        used = stats.get("sessionsThatUsedBrain", 0)
+        if seen:
+            engaged = linear(used, seen)
+            engaged_label = f"{used}/{seen} sessions"
+
+    render([
+        "EDITH · second brain",
+        "",
+        f"\u25cf {STATUS_UP}     :{port}",
+        f"memories  {tiered(notes)}  {notes}",
+        f"engaged   {engaged}  {engaged_label}",
+        f"recalled  {linear(here, max(here, 3))}  {here} here",
+    ])
+
+
+if __name__ == "__main__":
+    main()

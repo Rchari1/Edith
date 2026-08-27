@@ -11,6 +11,7 @@ import { Distiller } from '../core/distiller/distiller.js';
 import { DistillQueue } from '../core/distiller/queue.js';
 import { registerAll, type RegistrationResult } from '../core/onboarding/register.js';
 import { registerSessionHook, type HookResult } from '../core/onboarding/hooks.js';
+import { installSkill } from '../core/onboarding/skill.js';
 import { importFiles, importText, type ImportSummary } from '../core/importer/index.js';
 import fs from 'node:fs/promises';
 import { loadSettings, saveSettings, resolveApiKey, type Settings } from './settings.js';
@@ -38,6 +39,16 @@ export interface BrainStatus {
  * Deliberately separate from Electron so the whole pipeline can be constructed
  * and exercised without a browser window.
  */
+/**
+ * assets/ sits beside the built output in dev and inside the bundle when
+ * packaged. __dirname, not import.meta.url: the main process builds as
+ * CommonJS, where import.meta does not exist - and tsc cannot catch that
+ * because it does not know the output format.
+ */
+function assetsRoot(): string {
+  return path.resolve(__dirname, '../../assets');
+}
+
 export class AppState extends EventEmitter {
   settings!: Settings;
   vault!: Vault;
@@ -107,6 +118,23 @@ export class AppState extends EventEmitter {
         level: 'warn',
         at: Date.now()
       });
+    }
+
+    // The /edith skill lives entirely in its own directory under
+    // ~/.claude/skills, so unlike the config writes there is nothing to merge.
+    try {
+      const skillSource = path.join(assetsRoot(), 'skill', 'edith');
+      const skill = await installSkill(skillSource);
+      if (skill.status === 'failed') {
+        this.push({
+          type: 'status',
+          message: `Could not install the /edith command: ${skill.detail}`,
+          level: 'warn',
+          at: Date.now()
+        });
+      }
+    } catch {
+      // Never let an optional convenience block startup.
     }
 
     this.buildQueue();

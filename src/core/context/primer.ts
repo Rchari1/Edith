@@ -69,7 +69,18 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
   ].join('\n');
 }
 
-/** The exact JSON shape a Claude Code SessionStart hook must emit. */
+/**
+ * The exact JSON shape a Claude Code SessionStart hook must emit.
+ *
+ * Model-facing only, and there is no user-facing alternative here: the hooks
+ * reference lists SessionStart among the events that discard `systemMessage`
+ * ("stdout is used as context instead"), so both channels reach Claude and
+ * neither reaches the transcript. The only thing SessionStart renders to the
+ * user is stderr on exit 2, which displays as an error notice - not somewhere
+ * to put branding.
+ *
+ * Visible presence therefore lives in /edith and in the tool output.
+ */
 export function buildHookPayload(primer: string): string {
   return JSON.stringify({
     hookSpecificOutput: {
