@@ -96,6 +96,7 @@ declare global {
       forgeUpdateInstalled(id: string, patch: { description?: string; body?: string }): Promise<InstalledSkill | null>;
       forgeDeleteInstalled(id: string): Promise<{ ok: boolean; detail?: string }>;
       forgeAccept(id: string): Promise<{ ok: boolean; detail?: string }>;
+      forgeEdit(id: string, patch: { title?: string; description?: string; body?: string }): Promise<Proposal | null>;
       forgeReject(id: string): Promise<{ ok: boolean }>;
       forgeUndo(id: string): Promise<{ ok: boolean; detail?: string }>;
       onForgeChanged(cb: () => void): () => void;
@@ -107,6 +108,7 @@ declare global {
       forgeUpdateInstalled(id: string, patch: { description?: string; body?: string }): Promise<InstalledSkill | null>;
       forgeDeleteInstalled(id: string): Promise<{ ok: boolean; detail?: string }>;
       forgeAccept(id: string): Promise<{ ok: boolean; detail?: string }>;
+      forgeEdit(id: string, patch: { title?: string; description?: string; body?: string }): Promise<Proposal | null>;
       forgeReject(id: string): Promise<{ ok: boolean }>;
       forgeUndo(id: string): Promise<{ ok: boolean; detail?: string }>;
       onForgeChanged(cb: () => void): () => void;
@@ -1153,6 +1155,57 @@ function currentProposal(): Proposal | undefined {
   return queue[cursor];
 }
 
+/* ---------------- editing a proposal ---------------- */
+
+let editingCard = false;
+
+/**
+ * Swap the card between reading and editing.
+ *
+ * The draft is usually nearly right, and rejecting something that needed one
+ * line changed throws away work Claude already did. Editing stays on the card
+ * so the decision does not move somewhere else and come back.
+ */
+function setCardEditing(on: boolean): void {
+  editingCard = on;
+  const p = currentProposal();
+  if (!p) return;
+
+  $('forge-desc').classList.toggle('hidden', on);
+  $('forge-body').classList.toggle('hidden', on);
+  $('forge-desc-edit').classList.toggle('hidden', !on);
+  $('forge-body-edit').classList.toggle('hidden', !on);
+  $('forge-edit').classList.toggle('hidden', on);
+  $('forge-edit-done').classList.toggle('hidden', !on);
+  $('forge-name').setAttribute('contenteditable', String(on));
+  $('forge-name').classList.toggle('editing', on);
+
+  if (on) {
+    $<HTMLInputElement>('forge-desc-edit').value = p.description;
+    $<HTMLTextAreaElement>('forge-body-edit').value = p.body;
+    $<HTMLTextAreaElement>('forge-body-edit').focus();
+  }
+}
+
+/** Persist the edit and return the card to reading. Forging then installs it. */
+async function saveCardEdit(): Promise<void> {
+  const p = currentProposal();
+  if (!p) return;
+
+  const updated = await window.brain.forgeEdit(p.id, {
+    title: ($('forge-name').textContent ?? '').trim(),
+    description: $<HTMLInputElement>('forge-desc-edit').value,
+    body: $<HTMLTextAreaElement>('forge-body-edit').value
+  });
+
+  if (updated) queue[cursor] = updated;
+  setCardEditing(false);
+  paintCard();
+}
+
+$('forge-edit').addEventListener('click', () => setCardEditing(true));
+$('forge-edit-done').addEventListener('click', () => void saveCardEdit());
+
 function paintCard(): void {
   const p = currentProposal();
   const hasAny = queue.length > 0 && p;
@@ -1172,6 +1225,8 @@ function paintCard(): void {
   $('forge-src').textContent = p.sources.length
     ? `drawn from ${p.sources.join(', ')}`
     : '';
+
+  if (editingCard) setCardEditing(false);
 
   const card = $('forge-card');
   card.classList.remove('out-left', 'out-right', 'in');
@@ -1279,6 +1334,10 @@ async function loadForge(): Promise<void> {
 async function decide(verdict: 'accept' | 'reject' | 'skip'): Promise<void> {
   const p = currentProposal();
   if (!p || deciding) return;
+
+  // Forging with the editor still open should install what is on screen, not
+  // the draft it replaced.
+  if (editingCard && verdict === 'accept') await saveCardEdit();
   deciding = true;
 
   const card = $('forge-card');
@@ -1362,6 +1421,8 @@ window.brain.onVaultChanged(() => void refreshAll());
 window.addEventListener('keydown', (e) => {
   // Scoped to the forge so arrow keys never interfere with the graph.
   if (!$('forge').classList.contains('hidden')) {
+    // While editing, arrows belong to the text field.
+    if (editingCard && e.key.startsWith('Arrow')) return;
     if (e.key === 'ArrowRight') { e.preventDefault(); void decide('accept'); return; }
     if (e.key === 'ArrowLeft')  { e.preventDefault(); void decide('reject'); return; }
     if (e.key === 'ArrowDown')  { e.preventDefault(); void decide('skip'); return; }

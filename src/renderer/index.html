@@ -13,7 +13,7 @@
       <nav id="rail" aria-label="Sections">
         <button id="rail-add" class="rail-btn" title="Add to your brain" aria-label="Add to your brain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
         <button id="rail-memories" class="rail-btn active" title="Memories" aria-label="Memories" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 14 9 5 9-5"/></svg></button>
-        <button id="rail-skills" class="rail-btn" title="Skills Forge" aria-label="Skills Forge" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8h11.5l4 2.5-4 2H3.5z"/><path d="M8.6 12.5v2.4c0 1-.9 1.5-2.4 2V19h8.8v-2.1c-1.5-.5-2.4-1-2.4-2v-2.4"/></svg></button>
+        <button id="rail-skills" class="rail-btn" title="Skills Forge" aria-label="Skills Forge" aria-expanded="false"><span class="rail-glyph forge-anvil">&#9874;</span></button>
         <span class="rail-spacer"></span>
         <button id="rail-connection" class="rail-btn" title="Connection" aria-label="Connection" aria-expanded="false"><span class="rail-dot" id="rail-dot"></span></button>
       </nav>
@@ -166,11 +166,17 @@
             <div class="card ghost ghost-2"></div>
             <div class="card ghost ghost-1"></div>
             <article class="card live" id="forge-card">
-              <div class="card-kind">Proposed skill</div>
+              <div class="card-kind">
+                <span>Proposed skill</span>
+                <button class="card-edit" id="forge-edit">Edit</button>
+                <button class="card-edit hidden" id="forge-edit-done">Done</button>
+              </div>
               <h3 id="forge-name"></h3>
+              <input class="card-desc-edit hidden" id="forge-desc-edit" type="text" />
               <p class="card-desc" id="forge-desc"></p>
               <div class="card-why" id="forge-why"></div>
               <pre class="card-body" id="forge-body"></pre>
+              <textarea class="card-body-edit hidden" id="forge-body-edit" spellcheck="false"></textarea>
               <div class="card-src" id="forge-src"></div>
             </article>
           </div>

@@ -202,6 +202,12 @@ function registerIpc(appState: AppState): void {
     counts: appState.forge.counts()
   }));
 
+  ipcMain.handle('forge:edit', async (_e, id: string, patch: { title?: string; description?: string; body?: string }) => {
+    const r = await appState.forge.editProposal(id, patch);
+    send('forge:changed', null);
+    return r;
+  });
+
   ipcMain.handle('forge:accept', async (_e, id: string) => {
     const r = await appState.acceptSkill(id);
     send('forge:changed', null);

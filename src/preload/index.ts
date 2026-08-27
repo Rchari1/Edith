@@ -30,6 +30,8 @@ const api = {
     ipcRenderer.invoke('forge:update-installed', id, patch),
   forgeDeleteInstalled: (id: string) => ipcRenderer.invoke('forge:delete-installed', id),
   forgeAccept: (id: string) => ipcRenderer.invoke('forge:accept', id),
+  forgeEdit: (id: string, patch: { title?: string; description?: string; body?: string }) =>
+    ipcRenderer.invoke('forge:edit', id, patch),
   forgeReject: (id: string) => ipcRenderer.invoke('forge:reject', id),
   forgeUndo: (id: string) => ipcRenderer.invoke('forge:undo', id),
   onForgeChanged: (cb: () => void) => {

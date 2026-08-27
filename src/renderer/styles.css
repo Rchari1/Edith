@@ -1112,6 +1112,18 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
 
 .forge-anvil { opacity: 0.85; }
 
+/* The rail draws line icons; this one is a glyph, so it is sized and weighted
+   by hand to sit at the same optical size as the strokes beside it rather than
+   at whatever the font gives it. */
+.rail-glyph {
+  display: block;
+  /* 15px, not the 20px her SVGs use: this is a filled glyph against 1.15px
+     strokes, so matching the box would read far heavier than its neighbours. */
+  font-size: 15px;
+  line-height: 1;
+  opacity: 1;
+}
+
 /* The panel is the forge: two sections, what you have and what is waiting. */
 .forge-section { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
 .forge-section .section-head { margin-bottom: 2px; }
@@ -1274,4 +1286,44 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
   padding: 10px 11px;
   font: inherit; font-size: var(--fs-micro); line-height: 1.65;
   resize: vertical; outline: none;
+}
+
+/* ---------- editing a proposal ----------
+   Review is not a binary when a draft is nearly right: rejecting something that
+   needed one line changed throws the whole thing away. Editing happens on the
+   card itself so the decision stays in one place. */
+.card-kind { display: flex; align-items: center; gap: 8px; }
+.card-edit {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 2px 9px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.card-edit:hover { color: var(--text); border-color: var(--a-edge); }
+
+.card-desc-edit,
+.card-body-edit {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--fill-primary);
+  border-radius: var(--r);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  outline: none;
+}
+.card-desc-edit { font-size: var(--fs-body); }
+.card-body-edit {
+  flex: 1;
+  min-height: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  resize: none;
 }

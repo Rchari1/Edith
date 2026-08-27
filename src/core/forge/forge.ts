@@ -138,6 +138,32 @@ export class Forge {
     return { proposal };
   }
 
+  /**
+   * Edit a proposal before deciding on it.
+   *
+   * Review is not a binary when the draft is nearly right: rejecting something
+   * that needed one line changed throws away the whole thing, and accepting it
+   * installs a skill the user does not quite want. Only pending proposals can
+   * be edited - changing one already decided would silently diverge from the
+   * skill actually installed on disk.
+   */
+  async editProposal(
+    id: string,
+    patch: { title?: string; description?: string; body?: string }
+  ): Promise<SkillProposal | null> {
+    const existing = this.cache.get(id);
+    if (!existing || existing.status !== 'proposed') return null;
+
+    const next: SkillProposal = {
+      ...existing,
+      title: patch.title?.trim() || existing.title,
+      description: (patch.description ?? existing.description).replace(/\n/g, ' ').trim(),
+      body: (patch.body ?? existing.body).trim()
+    };
+    await this.write(next);
+    return next;
+  }
+
   async setStatus(
     id: string,
     status: 'accepted' | 'rejected',
