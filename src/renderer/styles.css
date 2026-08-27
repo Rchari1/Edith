@@ -144,8 +144,19 @@ button.primary:hover { background: rgba(255, 255, 255, 0.22); border-color: rgba
 button.danger:hover { border-color: var(--danger); color: var(--danger); }
 
 /* ---------- stage: full-bleed galaxy behind the glass ---------- */
-#stage { position: absolute; inset: 0; overflow: hidden; }
-#graph { width: 100%; height: 100%; display: block; cursor: grab; }
+#stage { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+/* The ambient field sits behind the graph and never takes a click. Its own
+   canvas so the Pensieve renderer is untouched by this experiment. */
+#neural-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 0;
+}
+#graph { position: relative; z-index: 1; width: 100%; height: 100%; display: block; cursor: grab; background: transparent; }
 
 .legend {
   position: absolute; left: 310px; bottom: 46px;

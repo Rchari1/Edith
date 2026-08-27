@@ -689,9 +689,11 @@ export class BrainGraph {
     const cx = rect.width / 2;
     const cy = rect.height / 2;
 
-    // A single deep-teal ground: flat, confident, no gradient theatrics.
-    ctx.fillStyle = COLORS.bg;
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    // Cleared rather than filled, so the neural field behind this canvas shows
+    // through. The ground colour now lives on #stage in CSS. This is the only
+    // change to this file for the neural-field experiment - revert this one
+    // block and the Pensieve renders exactly as before.
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
     ctx.save();
     // Breathing zoom around the viewport center, then the user's pan/zoom.
