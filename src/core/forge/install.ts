@@ -17,13 +17,14 @@ export function userSkillsDir(home = os.homedir()): string {
 }
 
 /** Render a proposal as a real SKILL.md. */
-export function renderSkill(p: SkillProposal): string {
+export function renderSkill(p: SkillProposal, origin: 'starter' | 'forged' = 'forged'): string {
   const lines = [
     '---',
     `name: ${p.id}`,
     `description: ${p.description.replace(/\n/g, ' ')}`,
     `metadata:`,
     `  forged-by: ${FORGED_BY}`,
+    `  origin: ${origin}`,
     `  proposed: ${p.created}`,
     '---',
     '',
@@ -52,7 +53,8 @@ async function exists(p: string): Promise<boolean> {
  */
 export async function installProposal(
   p: SkillProposal,
-  home = os.homedir()
+  home = os.homedir(),
+  origin: 'starter' | 'forged' = 'forged'
 ): Promise<InstallResult> {
   const dir = path.join(userSkillsDir(home), p.id);
   const file = path.join(dir, 'SKILL.md');
@@ -70,7 +72,7 @@ export async function installProposal(
     }
 
     await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(file, renderSkill(p), 'utf8');
+    await fs.writeFile(file, renderSkill(p, origin), 'utf8');
     return { status: 'installed', dir };
   } catch (err) {
     return { status: 'failed', dir, detail: err instanceof Error ? err.message : String(err) };

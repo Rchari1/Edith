@@ -19,6 +19,10 @@ const api = {
   revealVault: () => ipcRenderer.invoke('brain:reveal-vault'),
 
   forgeList: () => ipcRenderer.invoke('forge:list'),
+  forgeInstalled: () => ipcRenderer.invoke('forge:installed'),
+  forgeUpdateInstalled: (id: string, patch: { description?: string; body?: string }) =>
+    ipcRenderer.invoke('forge:update-installed', id, patch),
+  forgeDeleteInstalled: (id: string) => ipcRenderer.invoke('forge:delete-installed', id),
   forgeAccept: (id: string) => ipcRenderer.invoke('forge:accept', id),
   forgeReject: (id: string) => ipcRenderer.invoke('forge:reject', id),
   forgeUndo: (id: string) => ipcRenderer.invoke('forge:undo', id),

@@ -8,6 +8,7 @@ import { SessionWatcher } from '../core/watcher/index.js';
 import { WatcherSessionSource } from '../core/sessions/source.js';
 import { Forge } from '../core/forge/forge.js';
 import { installProposal, uninstallProposal } from '../core/forge/install.js';
+import { seedStarterSkills } from '../core/forge/starter.js';
 import type { SkillProposal } from '../core/forge/types.js';
 import { createThrottle } from '../core/util/throttle.js';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -89,6 +90,27 @@ export class AppState extends EventEmitter {
 
     this.forge = new Forge(this.settings.vaultPath);
     await this.forge.init();
+
+    // Install the bundled starter kit, once each. Edith works the moment it is
+    // opened rather than requiring five decisions first; the installed-skills
+    // panel is where any of it can be edited or removed.
+    try {
+      const seeded = await seedStarterSkills(
+        path.join(assetsRoot(), 'starter-skills'),
+        this.settings.vaultPath
+      );
+      if (seeded.seeded.length) {
+        this.push({
+          type: 'status',
+          message: `Installed ${seeded.seeded.length} starter skill(s) - available in a new Claude session`,
+          level: 'info',
+          at: Date.now()
+        });
+        this.emit('forge-changed');
+      }
+    } catch {
+      // A missing or unreadable bundle must never block startup.
+    }
 
     // Proposals are plain markdown and are advertised as editable in any
     // editor, so the forge has to notice edits made outside the app - the same

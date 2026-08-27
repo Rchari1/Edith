@@ -23,6 +23,13 @@ interface Status {
   lastSessionAt: number | null;
   queue: { total: number; done: number; failed: number; pending: number };
 }
+interface InstalledSkill {
+  id: string;
+  description: string;
+  body: string;
+  origin: 'starter' | 'forged';
+}
+
 interface Proposal {
   id: string;
   title: string;
@@ -56,6 +63,9 @@ declare global {
       backfill(): Promise<{ queued: number; skipped: number }>;
       reregister(): Promise<unknown>;
       forgeList(): Promise<{ proposals: Proposal[]; counts: { proposed: number } }>;
+      forgeInstalled(): Promise<InstalledSkill[]>;
+      forgeUpdateInstalled(id: string, patch: { description?: string; body?: string }): Promise<InstalledSkill | null>;
+      forgeDeleteInstalled(id: string): Promise<{ ok: boolean; detail?: string }>;
       forgeAccept(id: string): Promise<{ ok: boolean; detail?: string }>;
       forgeReject(id: string): Promise<{ ok: boolean }>;
       forgeUndo(id: string): Promise<{ ok: boolean; detail?: string }>;
@@ -64,6 +74,9 @@ declare global {
       updateNote(id: string, patch: { title?: string; body?: string }): Promise<NoteDto | null>;
       reregister(): Promise<unknown>;
       forgeList(): Promise<{ proposals: Proposal[]; counts: { proposed: number } }>;
+      forgeInstalled(): Promise<InstalledSkill[]>;
+      forgeUpdateInstalled(id: string, patch: { description?: string; body?: string }): Promise<InstalledSkill | null>;
+      forgeDeleteInstalled(id: string): Promise<{ ok: boolean; detail?: string }>;
       forgeAccept(id: string): Promise<{ ok: boolean; detail?: string }>;
       forgeReject(id: string): Promise<{ ok: boolean }>;
       forgeUndo(id: string): Promise<{ ok: boolean; detail?: string }>;
@@ -714,6 +727,7 @@ function paintCard(): void {
   const hasAny = queue.length > 0 && p;
 
   $('deck').classList.toggle('hidden', !hasAny);
+  $('deck-label').classList.toggle('hidden', !hasAny);
   $('forge-actions').classList.toggle('hidden', !hasAny);
   $('forge-empty').classList.toggle('hidden', Boolean(hasAny));
   $('forge-progress').textContent = hasAny ? `${cursor + 1} OF ${queue.length}` : '';
@@ -734,6 +748,98 @@ function paintCard(): void {
   void card.offsetWidth;
   card.classList.add('in');
 }
+
+/* ---------------- installed skills ---------------- */
+
+let editingSkill: InstalledSkill | null = null;
+
+async function loadInstalled(): Promise<void> {
+  const skills = await window.brain.forgeInstalled();
+  const list = $('installed-list');
+  list.innerHTML = '';
+  $('installed-count').textContent = skills.length ? String(skills.length) : '';
+
+  if (skills.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'installed-empty';
+    empty.textContent = 'Nothing installed yet.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const skill of skills) {
+    const row = document.createElement('div');
+    row.className = `installed-row ${skill.origin}`;
+    row.title = skill.origin === 'starter' ? 'shipped with Edith' : 'forged from your work';
+
+    const who = document.createElement('span');
+    who.className = 'who';
+    row.appendChild(who);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = `/${skill.id}`;
+    const desc = document.createElement('div');
+    desc.className = 'desc';
+    desc.textContent = skill.description;
+    meta.append(name, desc);
+    row.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+
+    const edit = document.createElement('button');
+    edit.textContent = 'Edit';
+    edit.addEventListener('click', () => openSkillEditor(skill));
+
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = 'Delete';
+    del.addEventListener('click', async () => {
+      if (!window.confirm(`Delete /${skill.id}? Claude will no longer have this skill.`)) return;
+      const r = await window.brain.forgeDeleteInstalled(skill.id);
+      if (!r.ok) {
+        logActivity({
+          type: 'status',
+          message: `Could not delete /${skill.id}: ${r.detail ?? 'unknown error'}`,
+          level: 'error',
+          at: Date.now()
+        });
+      }
+      await loadInstalled();
+    });
+
+    actions.append(edit, del);
+    row.appendChild(actions);
+    list.appendChild(row);
+  }
+}
+
+function openSkillEditor(skill: InstalledSkill): void {
+  editingSkill = skill;
+  $('skill-edit-name').textContent = `/${skill.id}`;
+  $<HTMLInputElement>('skill-edit-desc').value = skill.description;
+  $<HTMLTextAreaElement>('skill-edit-body').value = skill.body;
+  $('skill-edit').classList.remove('hidden');
+}
+
+$('skill-edit-cancel').addEventListener('click', () => {
+  $('skill-edit').classList.add('hidden');
+  editingSkill = null;
+});
+
+$('skill-edit-save').addEventListener('click', async () => {
+  if (!editingSkill) return;
+  await window.brain.forgeUpdateInstalled(editingSkill.id, {
+    description: $<HTMLInputElement>('skill-edit-desc').value,
+    body: $<HTMLTextAreaElement>('skill-edit-body').value
+  });
+  $('skill-edit').classList.add('hidden');
+  editingSkill = null;
+  await loadInstalled();
+});
 
 async function loadForge(): Promise<void> {
   const { proposals, counts } = await window.brain.forgeList();
@@ -788,6 +894,7 @@ async function decide(verdict: 'accept' | 'reject' | 'skip'): Promise<void> {
 function openForge(): void {
   cursor = 0;
   $('forge').classList.remove('hidden');
+  void loadInstalled();
   void loadForge().then(paintCard);
 }
 
@@ -797,7 +904,10 @@ $('forge-accept').addEventListener('click', () => void decide('accept'));
 $('forge-reject').addEventListener('click', () => void decide('reject'));
 $('forge-skip').addEventListener('click', () => void decide('skip'));
 
-window.brain.onForgeChanged(() => void loadForge());
+window.brain.onForgeChanged(() => {
+  void loadForge();
+  void loadInstalled();
+});
 
 window.brain.onEvent((e) => {
   if (e.type === 'considered') {
@@ -848,6 +958,7 @@ window.addEventListener('keydown', (e) => {
     $('settings').classList.add('hidden');
     $('import').classList.add('hidden');
     $('forge').classList.add('hidden');
+    $('skill-edit').classList.add('hidden');
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
     e.preventDefault();

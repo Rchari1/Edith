@@ -127,6 +127,16 @@
             <button class="close" id="forge-close" aria-label="Close">&times;</button>
           </header>
 
+          <section class="installed" id="installed">
+            <div class="installed-head">
+              <span class="installed-label">INSTALLED</span>
+              <span class="installed-count" id="installed-count"></span>
+            </div>
+            <div class="installed-list" id="installed-list"></div>
+          </section>
+
+          <div class="deck-label" id="deck-label">PROPOSED</div>
+
           <div class="deck" id="deck">
             <div class="card ghost ghost-2"></div>
             <div class="card ghost ghost-1"></div>
@@ -155,6 +165,21 @@
               Forge <span class="key">&rarr;</span>
             </button>
           </footer>
+        </div>
+      </section>
+
+      <section id="skill-edit" class="modal hidden">
+        <div class="modal-card">
+          <h2 id="skill-edit-name"></h2>
+          <label>What it does
+            <input id="skill-edit-desc" type="text" />
+            <small>This is what Claude reads to decide whether to use the skill.</small>
+          </label>
+          <textarea id="skill-edit-body" rows="12" spellcheck="false"></textarea>
+          <div class="modal-actions">
+            <button id="skill-edit-cancel">Cancel</button>
+            <button id="skill-edit-save" class="primary">Save</button>
+          </div>
         </div>
       </section>
 

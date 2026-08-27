@@ -11,6 +11,12 @@ export interface ProposeInput {
   rationale?: string;
   sources?: string[];
   id?: string;
+  /**
+   * Bypass the pending cap. Only for the bundled starter kit: the cap exists to
+   * stop Claude flooding the queue, and applying it to the kit would mean a new
+   * user's queue is full before they have done any work.
+   */
+  bypassCap?: boolean;
 }
 
 /**
@@ -110,7 +116,7 @@ export class Forge {
 
     // Replacing a pending proposal is fine; adding a new one to a full queue
     // is not.
-    if (!existing && this.counts().proposed >= this.maxPending) {
+    if (!input.bypassCap && !existing && this.counts().proposed >= this.maxPending) {
       return {
         proposal: null,
         reason: `the review queue is full (${this.maxPending} waiting). Do not propose more until the user has reviewed them - tell them there are skills waiting in Edith instead.`
