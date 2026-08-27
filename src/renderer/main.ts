@@ -962,7 +962,7 @@ let openSection: Section | null = 'memories';
 const SECTION_TITLE: Record<Section, string> = {
   add: 'Add',
   memories: 'Memories',
-  skills: 'Skills',
+  skills: 'Skills Forge',
   connection: 'Connection'
 };
 
