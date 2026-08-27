@@ -123,19 +123,23 @@
         <div class="forge-stage">
           <header class="forge-head">
             <span class="forge-title"><span class="forge-anvil">&#9874;</span> THE FORGE</span>
-            <span class="forge-progress" id="forge-progress"></span>
             <button class="close" id="forge-close" aria-label="Close">&times;</button>
           </header>
 
           <section class="installed" id="installed">
-            <div class="installed-head">
-              <span class="installed-label">INSTALLED</span>
-              <span class="installed-count" id="installed-count"></span>
+            <div class="section-head">
+              <span class="section-label">Installed</span>
+              <span class="section-note" id="installed-count"></span>
             </div>
             <div class="installed-list" id="installed-list"></div>
           </section>
 
-          <div class="deck-label" id="deck-label">PROPOSED</div>
+          <section class="proposed-head">
+            <div class="section-head">
+              <span class="section-label">Proposed by Edith</span>
+              <span class="section-note" id="forge-progress"></span>
+            </div>
+          </section>
 
           <div class="deck" id="deck">
             <div class="card ghost ghost-2"></div>
@@ -151,9 +155,8 @@
           </div>
 
           <div class="forge-empty hidden" id="forge-empty">
-            <span class="forge-anvil big">&#9874;</span>
-            <p>Nothing in the forge.</p>
-            <small>Ask Claude to review your memories and propose a skill.</small>
+            <p>Nothing proposed right now.</p>
+            <small>Edith proposes a skill when it notices a procedure you repeat.</small>
           </div>
 
           <footer class="forge-actions" id="forge-actions">

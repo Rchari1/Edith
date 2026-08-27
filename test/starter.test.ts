@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Forge } from '@core/forge/forge.js';
 import { seedStarterSkills } from '@core/forge/starter.js';
 import { listInstalled, updateInstalled, deleteInstalled } from '@core/forge/installed.js';
 import { tmpDir, rm } from './helpers.js';
@@ -140,5 +141,52 @@ describe('installed skills', () => {
     const r = await deleteInstalled('my-own', home);
     expect(r.ok).toBe(false);
     expect(fs.existsSync(path.join(mine, 'SKILL.md'))).toBe(true);
+  });
+});
+
+describe('starter kit respects the forge', () => {
+  let bundled: string;
+  let vault: string;
+  let home: string;
+
+  beforeEach(() => {
+    bundled = tmpDir('sb-resp-bundle-');
+    vault = tmpDir('sb-resp-vault-');
+    home = tmpDir('sb-resp-home-');
+    bundle(bundled, 'brainstorm', 'Brainstorm');
+    bundle(bundled, 'review-a-pr', 'Review A PR');
+  });
+  afterEach(() => { rm(bundled); rm(vault); rm(home); });
+
+  it('never installs a skill the user rejected in the deck', async () => {
+    const forge = new Forge(vault);
+    await forge.init();
+    await forge.propose({ title: 'Brainstorm', description: 'x', body: 'y', id: 'brainstorm' });
+    await forge.setStatus('brainstorm', 'rejected');
+
+    const r = await seedStarterSkills(bundled, vault, home, forge);
+
+    // Declining a proposal and finding it installed anyway would make the
+    // review step decorative.
+    expect(r.seeded).toEqual(['review-a-pr']);
+    expect((await listInstalled(home)).map((s) => s.id)).not.toContain('brainstorm');
+  });
+
+  it('does not reconsider a rejected skill on later launches', async () => {
+    const forge = new Forge(vault);
+    await forge.init();
+    await forge.propose({ title: 'Brainstorm', description: 'x', body: 'y', id: 'brainstorm' });
+    await forge.setStatus('brainstorm', 'rejected');
+
+    await seedStarterSkills(bundled, vault, home, forge);
+    const second = await seedStarterSkills(bundled, vault, home, forge);
+    expect(second.seeded).toEqual([]);
+  });
+
+  it('still installs an accepted or unseen skill normally', async () => {
+    const forge = new Forge(vault);
+    await forge.init();
+    const r = await seedStarterSkills(bundled, vault, home, forge);
+    expect(r.seeded.sort()).toEqual(['brainstorm', 'review-a-pr']);
   });
 });

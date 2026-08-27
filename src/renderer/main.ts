@@ -727,10 +727,10 @@ function paintCard(): void {
   const hasAny = queue.length > 0 && p;
 
   $('deck').classList.toggle('hidden', !hasAny);
-  $('deck-label').classList.toggle('hidden', !hasAny);
   $('forge-actions').classList.toggle('hidden', !hasAny);
   $('forge-empty').classList.toggle('hidden', Boolean(hasAny));
-  $('forge-progress').textContent = hasAny ? `${cursor + 1} OF ${queue.length}` : '';
+  $('forge-actions').classList.toggle('hidden', !hasAny);
+  $('forge-progress').textContent = hasAny ? `${cursor + 1} of ${queue.length}` : 'nothing waiting';
 
   if (!p) return;
 
@@ -757,21 +757,23 @@ async function loadInstalled(): Promise<void> {
   const skills = await window.brain.forgeInstalled();
   const list = $('installed-list');
   list.innerHTML = '';
-  $('installed-count').textContent = skills.length ? String(skills.length) : '';
+  $('installed-count').textContent = skills.length
+    ? `${skills.length} skill${skills.length === 1 ? '' : 's'}`
+    : '';
 
   if (skills.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'installed-empty';
-    empty.textContent = 'Nothing installed yet.';
+    empty.textContent = 'No skills installed yet.';
     list.appendChild(empty);
     return;
   }
 
   for (const skill of skills) {
     const row = document.createElement('div');
-    row.className = `installed-row ${skill.origin}`;
-    row.title = skill.origin === 'starter' ? 'shipped with Edith' : 'forged from your work';
+    row.className = 'installed-row';
 
+    // One dot, one meaning: Edith installed this and Edith can remove it.
     const who = document.createElement('span');
     who.className = 'who';
     row.appendChild(who);
@@ -786,6 +788,13 @@ async function loadInstalled(): Promise<void> {
     desc.textContent = skill.description;
     meta.append(name, desc);
     row.appendChild(meta);
+
+    // Origin is a detail, so it is a quiet label that yields to the actions on
+    // hover - not a colour difference that reads as one skill being lesser.
+    const origin = document.createElement('span');
+    origin.className = 'origin';
+    origin.textContent = skill.origin === 'starter' ? 'built in' : 'forged';
+    row.appendChild(origin);
 
     const actions = document.createElement('div');
     actions.className = 'row-actions';
@@ -846,9 +855,21 @@ async function loadForge(): Promise<void> {
   queue = proposals.filter((p) => p.status === 'proposed');
   if (cursor >= queue.length) cursor = Math.max(0, queue.length - 1);
 
+  /*
+   * The chip is the only way into the forge, and the installed-skills panel
+   * lives inside it - so hiding the chip whenever the proposal queue is empty
+   * made that panel unreachable, which is the state every user lands in as
+   * soon as they finish reviewing. It now appears whenever there is anything
+   * to see, and the count badge is only for things still awaiting a decision.
+   */
+  const installedCount = (await window.brain.forgeInstalled()).length;
   const chip = $('forge-chip');
-  chip.classList.toggle('hidden', counts.proposed === 0);
-  $('forge-count').textContent = String(counts.proposed);
+  chip.classList.toggle('hidden', counts.proposed === 0 && installedCount === 0);
+  $('forge-count').textContent = counts.proposed > 0 ? String(counts.proposed) : '';
+  chip.title =
+    counts.proposed > 0
+      ? `${counts.proposed} skill(s) to review`
+      : `${installedCount} installed skill(s)`;
 
   if (!$('forge').classList.contains('hidden')) paintCard();
 }

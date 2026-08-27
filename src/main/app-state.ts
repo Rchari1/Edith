@@ -97,7 +97,9 @@ export class AppState extends EventEmitter {
     try {
       const seeded = await seedStarterSkills(
         path.join(assetsRoot(), 'starter-skills'),
-        this.settings.vaultPath
+        this.settings.vaultPath,
+        undefined,
+        this.forge
       );
       if (seeded.seeded.length) {
         this.push({
