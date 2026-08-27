@@ -8,6 +8,7 @@ import { SessionWatcher } from '../core/watcher/index.js';
 import { WatcherSessionSource } from '../core/sessions/source.js';
 import { Forge } from '../core/forge/forge.js';
 import { installProposal, uninstallProposal } from '../core/forge/install.js';
+import { seedStarterSkills } from '../core/forge/starter.js';
 import type { SkillProposal } from '../core/forge/types.js';
 import { createThrottle } from '../core/util/throttle.js';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -89,6 +90,27 @@ export class AppState extends EventEmitter {
 
     this.forge = new Forge(this.settings.vaultPath);
     await this.forge.init();
+
+    // Offer the bundled starter kit. Once each, as proposals rather than
+    // installed skills - an empty forge explains nothing, but putting files on
+    // someone's machine unasked is not the answer either.
+    try {
+      const seeded = await seedStarterSkills(
+        this.forge,
+        path.join(assetsRoot(), 'starter-skills'),
+        this.settings.vaultPath
+      );
+      if (seeded.seeded.length) {
+        this.push({
+          type: 'status',
+          message: `${seeded.seeded.length} starter skill(s) waiting in the forge`,
+          level: 'info',
+          at: Date.now()
+        });
+      }
+    } catch {
+      // A missing or unreadable bundle must never block startup.
+    }
 
     // Proposals are plain markdown and are advertised as editable in any
     // editor, so the forge has to notice edits made outside the app - the same

@@ -43,6 +43,7 @@
       "assets/icon.png",
       "assets/skill/**/*",
       "assets/statusline/**/*",
+      "assets/starter-skills/**/*",
       "package.json"
     ],
     "mac": {
