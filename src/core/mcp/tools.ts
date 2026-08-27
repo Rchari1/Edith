@@ -249,8 +249,13 @@ export function registerBrainTools(
           'taken port should never be fatal"). A skill records how to do something ("to add a new MCP tool: register it ' +
           'in tools.ts, add the description, write the test, update the preview script"). If it has no steps, it is a note ' +
           '- use save_note instead.\n\n' +
-          'Do NOT propose skills speculatively, for one-off tasks, or for anything already covered by an existing skill. ' +
-          'A queue full of weak proposals is worse than an empty one, because the user stops reading it.',
+          'Be sparing. Propose at most ONE skill per session unless the user explicitly asks for more, and only when you ' +
+          'have actually seen the pattern happen at least twice - in their memories, their past sessions, or this ' +
+          'conversation. A hunch that something might be reusable is not evidence.\n\n' +
+          'Do NOT propose speculatively, for one-off tasks, for anything already covered by an existing skill, or as a ' +
+          'way of being helpful when there is nothing to propose. A queue full of weak proposals is worse than an empty ' +
+          'one, because the user stops reading it - and the review queue is capped, so a weak proposal can crowd out a ' +
+          'good one.',
         inputSchema: {
           title: z.string().describe('Short human title, 2-5 words'),
           description: z

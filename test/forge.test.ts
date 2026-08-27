@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Forge } from '@core/forge/forge.js';
+import { Forge, DEFAULT_MAX_PENDING } from '@core/forge/forge.js';
 import { installProposal, uninstallProposal, renderSkill, FORGED_BY } from '@core/forge/install.js';
 import { Vault } from '@core/vault/vault.js';
 import { SqliteSearchProvider } from '@core/vault/search.js';
@@ -74,6 +74,45 @@ describe('Forge', () => {
     const p = forge.get('add-an-mcp-tool')!;
     expect(p.status).toBe('proposed');
     expect(p.installedAt).toBeUndefined();
+  });
+
+  it('refuses new proposals once the queue is full', async () => {
+    const small = new Forge(dir, 3);
+    await small.init();
+    for (const n of ['One', 'Two', 'Three']) await small.propose({ ...draft, title: n });
+
+    const overflow = await small.propose({ ...draft, title: 'Four' });
+    expect(overflow.proposal).toBeNull();
+    expect(overflow.reason).toMatch(/queue is full/i);
+    expect(small.counts().proposed).toBe(3);
+  });
+
+  it('still lets a pending proposal be replaced when the queue is full', async () => {
+    const small = new Forge(dir, 2);
+    await small.init();
+    await small.propose({ ...draft, title: 'One' });
+    await small.propose({ ...draft, title: 'Two' });
+
+    // Improving a draft already in the queue does not add to it.
+    const better = await small.propose({ ...draft, title: 'One', body: 'a better body' });
+    expect(better.proposal).not.toBeNull();
+    expect(small.counts().proposed).toBe(2);
+    expect(small.get('one')?.body).toBe('a better body');
+  });
+
+  it('frees a slot once something is reviewed', async () => {
+    const small = new Forge(dir, 2);
+    await small.init();
+    await small.propose({ ...draft, title: 'One' });
+    await small.propose({ ...draft, title: 'Two' });
+    expect((await small.propose({ ...draft, title: 'Three' })).proposal).toBeNull();
+
+    await small.setStatus('one', 'rejected');
+    expect((await small.propose({ ...draft, title: 'Three' })).proposal).not.toBeNull();
+  });
+
+  it('defaults to a queue small enough to actually review', () => {
+    expect(DEFAULT_MAX_PENDING).toBeLessThanOrEqual(5);
   });
 
   it('lists oldest first, so the queue is reviewed in order', async () => {

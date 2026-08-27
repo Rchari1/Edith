@@ -24,12 +24,24 @@ export interface ProposeInput {
  * Proposals are markdown with frontmatter, same as notes, so the whole forge is
  * inspectable and editable in any editor.
  */
+/**
+ * How many proposals may wait for review at once.
+ *
+ * A hard cap rather than a request in the tool description, because asking is
+ * not enough: a queue of twenty never gets reviewed, so proposal twenty-one
+ * costs the user nothing but noise and makes the first three less likely to be
+ * read. Refusing tells Claude plainly to stop until the user catches up.
+ */
+export const DEFAULT_MAX_PENDING = 5;
+
 export class Forge {
   readonly dir: string;
   private cache = new Map<string, SkillProposal>();
+  private readonly maxPending: number;
 
-  constructor(vaultRoot: string) {
+  constructor(vaultRoot: string, maxPending = DEFAULT_MAX_PENDING) {
     this.dir = path.join(vaultRoot, 'skills');
+    this.maxPending = maxPending;
   }
 
   async init(): Promise<void> {
@@ -94,6 +106,15 @@ export class Forge {
     }
     if (existing?.status === 'accepted') {
       return { proposal: null, reason: 'already accepted and installed' };
+    }
+
+    // Replacing a pending proposal is fine; adding a new one to a full queue
+    // is not.
+    if (!existing && this.counts().proposed >= this.maxPending) {
+      return {
+        proposal: null,
+        reason: `the review queue is full (${this.maxPending} waiting). Do not propose more until the user has reviewed them - tell them there are skills waiting in Edith instead.`
+      };
     }
 
     const proposal: SkillProposal = {
