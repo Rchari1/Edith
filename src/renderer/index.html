@@ -30,12 +30,21 @@
 
           <nav class="note-list" id="note-list"></nav>
           <nav class="skill-list hidden" id="skill-list">
-            <button class="forge-entry hidden" id="forge-entry">
-              <span class="forge-anvil">&#9874;</span>
-              <span class="forge-entry-text" id="forge-entry-text"></span>
-              <span class="forge-entry-go">Review</span>
-            </button>
-            <div id="skill-items"></div>
+            <div class="forge-section">
+              <div class="section-head">
+                <span class="section-label">Installed</span>
+                <span class="section-note" id="installed-count"></span>
+              </div>
+              <div id="skill-items"></div>
+            </div>
+
+            <div class="forge-section">
+              <div class="section-head">
+                <span class="section-label">Proposed by Edith</span>
+                <span class="section-note" id="proposed-count"></span>
+              </div>
+              <div id="proposed-items"></div>
+            </div>
           </nav>
 
           <div class="panel-form hidden" id="add-pane">

@@ -438,7 +438,7 @@ let presenceActive = false;
 function paintPresence(active: boolean): void {
   $('rail-connection').classList.toggle('live', active);
   $('conn-status').classList.toggle('live', active);
-  $('conn-status-text').textContent = active ? 'working' : 'idle';
+  $('conn-status-text').textContent = active ? 'connected' : 'idle';
   $('conn-status-note').textContent = active ? '' : 'quiet for 45s';
 }
 
@@ -876,6 +876,9 @@ let edithManaged = new Map<string, InstalledSkill>();
 function renderSkills(): void {
   const list = $('skill-items');
   list.innerHTML = '';
+  $('installed-count').textContent = String(
+    new Set([...skillsDeclared.keys(), ...skillTerritory.keys(), ...edithManaged.keys()]).size || ''
+  );
 
   // Everything declared on disk, plus anything with a territory whose
   // SKILL.md we could not find, plus anything Edith has installed.
@@ -1212,6 +1215,49 @@ $('skill-edit-save').addEventListener('click', async () => {
   await loadInstalled();
 });
 
+/**
+ * Proposals, listed in the panel beside what is installed.
+ *
+ * The panel is the forge: what you have and what is waiting, in one place.
+ * Reviewing still happens on the deck, because deciding one at a time wants a
+ * card that can leave the frame - a row opens the deck at that proposal.
+ */
+function renderProposed(): void {
+  const list = $('proposed-items');
+  list.innerHTML = '';
+  $('proposed-count').textContent = queue.length ? String(queue.length) : '';
+
+  if (queue.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = 'Nothing waiting.';
+    list.appendChild(empty);
+    return;
+  }
+
+  queue.forEach((p, index) => {
+    const item = document.createElement('div');
+    item.className = 'skill-item openable proposed';
+    item.title = p.description;
+
+    const label = document.createElement('span');
+    label.className = 'n';
+    label.textContent = p.id;
+    item.append(label);
+
+    const go = document.createElement('span');
+    go.className = 'review-cue';
+    go.textContent = 'Review';
+    item.append(go);
+
+    item.addEventListener('click', () => {
+      cursor = index;
+      openForge();
+    });
+    list.appendChild(item);
+  });
+}
+
 async function loadForge(): Promise<void> {
   const { proposals, counts } = await window.brain.forgeList();
   queue = proposals.filter((p) => p.status === 'proposed');
@@ -1224,11 +1270,7 @@ async function loadForge(): Promise<void> {
    * soon as they finish reviewing. It now appears whenever there is anything
    * to see, and the count badge is only for things still awaiting a decision.
    */
-  // Only about proposals now. What is installed is the list underneath, so
-  // announcing a count for it here was the same thing said twice.
-  const entry = $('forge-entry');
-  entry.classList.toggle('hidden', counts.proposed === 0);
-  $('forge-entry-text').textContent = `${counts.proposed} skill${counts.proposed === 1 ? '' : 's'} proposed by Edith`;
+  renderProposed();
 
   if (!$('forge').classList.contains('hidden')) paintCard();
 }
@@ -1272,13 +1314,11 @@ async function decide(verdict: 'accept' | 'reject' | 'skip'): Promise<void> {
 }
 
 function openForge(): void {
-  cursor = 0;
   $('forge').classList.remove('hidden');
   void loadInstalled();
   void loadForge().then(paintCard);
 }
 
-$('forge-entry').addEventListener('click', openForge);
 $('forge-close').addEventListener('click', () => $('forge').classList.add('hidden'));
 $('forge-accept').addEventListener('click', () => void decide('accept'));
 $('forge-reject').addEventListener('click', () => void decide('reject'));

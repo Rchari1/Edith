@@ -1110,27 +1110,19 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
    for a single decision at a time and the card has to be able to leave the
    frame. That is a flow, not a section. */
 
-.forge-entry {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 10px 11px;
-  margin-bottom: 8px;
-  border: 1px solid var(--fill-primary);
-  border-radius: var(--r);
-  background: var(--a-raised);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-body);
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--t-snap) var(--ease), border-color var(--t-snap) var(--ease);
-}
-.forge-entry:hover { background: var(--fill-hover); }
-.forge-entry-text { flex: 1; min-width: 0; }
-.forge-entry-go { font-size: var(--fs-micro); color: var(--muted); letter-spacing: 0.08em; }
 .forge-anvil { opacity: 0.85; }
+
+/* The panel is the forge: two sections, what you have and what is waiting. */
+.forge-section { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
+.forge-section .section-head { margin-bottom: 2px; }
+.skill-item.proposed .n { color: var(--muted); }
+.review-cue {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+.skill-item.proposed:hover .review-cue { color: var(--text); }
 
 .overlay {
   position: absolute;
