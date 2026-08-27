@@ -9,11 +9,11 @@
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/vitest/vitest.mjs run --pool=forks",
+    "test:watch": "env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/vitest/vitest.mjs --pool=forks",
     "start": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "dist": "electron-vite build && electron-builder",
-    "icon": "electron scripts/render-icon.cjs && iconutil -c icns assets/icon.iconset -o assets/icon.icns"
+    "icon": "env -u ELECTRON_RUN_AS_NODE electron scripts/render-icon.cjs && iconutil -c icns assets/icon.iconset -o assets/icon.icns"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -22,6 +22,7 @@
     "chokidar": "^5.0.0",
     "express": "^5.2.1",
     "gray-matter": "^4.0.3",
+    "katex": "^0.18.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

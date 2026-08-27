@@ -95,10 +95,45 @@ export async function importFiles(vault: Vault, files: string[]): Promise<Import
   };
 }
 
+/**
+ * Name a note from its own first line.
+ *
+ * Pasted text almost never arrives with a title, and asking for one puts a
+ * required field in front of the fastest path into the app. A heading or an
+ * opening sentence is what someone would have typed anyway, so take that and
+ * let them rename it later by editing the note.
+ */
+export function titleFromBody(body: string): string {
+  const first = body
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean);
+  if (!first) return 'Untitled';
+
+  // Strip the markdown that would otherwise end up inside the title.
+  const clean = first
+    .replace(/^#{1,6}(?:\s+|$)/, '')
+    .replace(/^[-*+](?:\s+|$)/, '')
+    .replace(/^>(?:\s+|$)/, '')
+    .replace(/^\d+[.)](?:\s+|$)/, '')
+    .trim();
+  if (!clean) return 'Untitled';
+  if (clean.length <= 72) return clean;
+
+  // Cut on a word boundary rather than mid-word.
+  const cut = clean.slice(0, 72);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 40 ? cut.slice(0, space) : cut).trim()}\u2026`;
+}
+
 /** Save pasted text as a single note, verbatim. */
 export async function importText(vault: Vault, title: string, body: string): Promise<{ id: string }> {
   const clean = body.trim();
   if (!clean) throw new Error('Nothing to import - the text is empty.');
-  const note = await vault.upsert({ title: title.trim() || 'Untitled', body: clean, origin: 'human' });
+  const note = await vault.upsert({
+    title: title.trim() || titleFromBody(clean),
+    body: clean,
+    origin: 'human'
+  });
   return { id: note.frontmatter.id };
 }

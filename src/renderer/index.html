@@ -9,43 +9,102 @@
   <body>
     <div id="app">
       <div id="drag-strip"></div>
+      <div id="shell">
+      <nav id="rail" aria-label="Sections">
+        <button id="rail-add" class="rail-btn" title="Add to your brain" aria-label="Add to your brain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button id="rail-memories" class="rail-btn active" title="Memories" aria-label="Memories" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 14 9 5 9-5"/></svg></button>
+        <button id="rail-skills" class="rail-btn" title="Skills Forge" aria-label="Skills Forge" aria-expanded="false"><span class="rail-glyph forge-anvil">&#9874;</span></button>
+        <span class="rail-spacer"></span>
+        <button id="rail-connection" class="rail-btn" title="Connection" aria-label="Connection" aria-expanded="false"><span class="rail-dot" id="rail-dot"></span></button>
+      </nav>
+
       <aside id="sidebar">
-        <div class="search-wrap">
-          <input id="search" type="search" placeholder="Search your memories" autocomplete="off" />
-          <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
+        <div class="panel-head">
+          <span class="panel-title" id="panel-title">Memories</span>
         </div>
 
-        <nav class="note-list" id="note-list"></nav>
+        <div class="panel-body">
+          <div class="search-wrap" id="search-wrap">
+            <input id="search" type="search" placeholder="Search your memories" autocomplete="off" />
+          </div>
+
+          <nav class="note-list" id="note-list"></nav>
+          <nav class="skill-list hidden" id="skill-list">
+            <div class="forge-section">
+              <div class="section-head">
+                <span class="section-label">Installed</span>
+                <span class="section-note" id="installed-count"></span>
+              </div>
+              <div id="skill-items"></div>
+            </div>
+
+            <div class="forge-section">
+              <div class="section-head">
+                <span class="section-label">Proposed by Edith</span>
+                <span class="section-note" id="proposed-count"></span>
+              </div>
+              <div id="proposed-items"></div>
+            </div>
+          </nav>
+
+          <div class="panel-form hidden" id="add-pane">
+          <div class="source-tabs" role="tablist">
+          <button class="source-tab active" id="src-files" role="tab" aria-selected="true">Files</button>
+          <button class="source-tab" id="src-paste" role="tab" aria-selected="false">Paste</button>
+          <button class="source-tab" id="src-link" role="tab" aria-selected="false">Link</button>
+          </div>
+
+          <div class="source-pane" id="pane-files">
+          <div class="dropzone" id="import-drop">
+            <strong>Drop files here</strong>
+            <small>.md &middot; .markdown &middot; .txt &middot; .mdx</small>
+            <small class="soon">PDF &middot; DOCX &middot; EPUB &middot; RTF &mdash; coming soon</small>
+          </div>
+          <div class="pick-row">
+            <button id="import-pick">Choose files</button>
+            <button id="import-pick-folder">Choose folder</button>
+          </div>
+          <div id="import-files" class="import-files hidden"></div>
+          </div>
+
+          <div class="source-pane hidden" id="pane-paste">
+          <textarea id="import-body" rows="7" placeholder="Paste notes, a document, anything worth remembering&hellip;"></textarea>
+          </div>
+
+          <div class="source-pane hidden" id="pane-link">
+          <label>Address
+          <input id="import-url" type="url" placeholder="https://&hellip;" disabled />
+          </label>
+          </div>
+
+          <div id="import-msg" class="import-msg hidden"></div>
+          <div class="modal-actions">
+            <button id="import-go" class="primary">Add</button>
+          </div>
+        
+          </div>
+          <div class="panel-form hidden" id="connection-pane">
+          <div class="conn-status" id="conn-status">
+          <span class="conn-status-key">Claude</span>
+          <span class="conn-status-dot"></span>
+          <span class="conn-status-text" id="conn-status-text">idle</span>
+          <span class="conn-status-note" id="conn-status-note">quiet for 45s</span>
+          </div>
+          <div class="conn-rows" id="conn-rows"></div>
+          <div class="modal-lib">
+          <button id="btn-vault" title="Open the vault folder">Reveal vault</button>
+          <button id="conn-reregister">Reestablish connection</button>
+          </div>
+          </div>
+
+          
+        </div>
       </aside>
+      </div>
 
       <main id="stage">
         <canvas id="graph"></canvas>
         <div id="stage-title" class="stage-title" aria-hidden="true">
-          <svg class="stage-mark" viewBox="0 0 128 128" fill="none">
-            <defs>
-              <linearGradient id="edithEdge" x1="14" y1="18" x2="114" y2="104" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#7dd3fc"/>
-                <stop offset="0.55" stop-color="#a78bfa"/>
-                <stop offset="1" stop-color="#f5b942"/>
-              </linearGradient>
-            </defs>
-            <g stroke="url(#edithEdge)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M64 24c-9-9-24-8-31 1-9-2-17 5-17 14 0 4 1 7 3 10-5 5-6 13-2 19-3 6-1 14 5 18 1 9 9 15 18 14 5 6 14 7 20 2 1.5-1.3 2.5-3 3-4.8V24z"/>
-              <path d="M64 24c9-9 24-8 31 1 9-2 17 5 17 14 0 4-1 7-3 10 5 5 6 13 2 19 3 6 1 14-5 18-1 9-9 15-18 14-5 6-14 7-20 2-1.5-1.3-2.5-3-3-4.8V24z"/>
-            </g>
-            <g stroke="url(#edithEdge)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85">
-              <path d="M40 46h14v18H34"/><path d="M54 64v22"/>
-              <path d="M88 46H74v18h20"/><path d="M74 64v22"/>
-              <path d="M40 84h14"/><path d="M88 84H74"/><path d="M64 34v12"/>
-            </g>
-            <g fill="var(--bg)" stroke="url(#edithEdge)" stroke-width="3.2">
-              <circle cx="40" cy="46" r="5"/><circle cx="34" cy="64" r="5"/>
-              <circle cx="40" cy="84" r="5"/><circle cx="54" cy="86" r="5"/>
-              <circle cx="88" cy="46" r="5"/><circle cx="94" cy="64" r="5"/>
-              <circle cx="88" cy="84" r="5"/><circle cx="74" cy="86" r="5"/>
-            </g>
-            <circle cx="64" cy="60" r="6.5" fill="#f0f9ff"/>
-          </svg>
           <div class="stage-headline">
             <span class="stage-name">EDITH</span>
             <span class="stage-tagline">Second Brain</span>
@@ -70,7 +129,7 @@
       </main>
 
       <section id="detail" class="detail hidden">
-        <button class="close" id="detail-close" aria-label="Close">&times;</button>
+        <button class="close" id="detail-close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
         <h2 id="detail-title"></h2>
         <div class="detail-meta" id="detail-meta"></div>
         <div class="detail-body" id="detail-body"></div>
@@ -87,69 +146,37 @@
         </div>
       </section>
 
-      <section id="import" class="modal hidden">
-        <div class="modal-card">
-          <h2>Add to your brain</h2>
+      
 
-          <button class="dropzone" id="import-pick">
-            <strong>Choose files</strong>
-            <small>.md &middot; .markdown &middot; .txt &middot; .mdx</small>
-          </button>
-          <div id="import-files" class="import-files hidden"></div>
 
-          <div class="or-rule"><span>or paste text</span></div>
 
-          <label>Title
-            <input id="import-title" type="text" placeholder="What is this?" />
-          </label>
-          <textarea id="import-body" rows="5" placeholder="Paste notes, a document, anything worth remembering&hellip;"></textarea>
+      <div id="activity">
+        <div id="activity-inner"></div>
+      </div>
 
-          <div class="mode-choice">
-            <label class="row"><input type="radio" name="imode" value="verbatim" checked />
-              <span><strong>Keep as written</strong><small>Stored exactly as-is. Free.</small></span></label>
-            <label class="row"><input type="radio" name="imode" value="distill" />
-              <span><strong>Distill into concepts</strong><small>Extracts ideas. Uses your API key.</small></span></label>
-          </div>
-
-          <div id="import-msg" class="import-msg hidden"></div>
-          <div class="modal-actions">
-            <button id="import-cancel">Cancel</button>
-            <button id="import-go" class="primary">Add to brain</button>
-          </div>
-        </div>
-      </section>
-
-      <section id="forge" class="modal hidden">
+      <section id="forge" class="overlay hidden">
         <div class="forge-stage">
           <header class="forge-head">
-            <span class="forge-title"><span class="forge-anvil">&#9874;</span> THE FORGE</span>
-            <button class="close" id="forge-close" aria-label="Close">&times;</button>
+            <span class="forge-title"><span class="forge-anvil">&#9874;</span> Proposed by Edith</span>
+            <span class="section-note" id="forge-progress"></span>
+            <button class="icon-btn" id="forge-close" aria-label="Close">&times;</button>
           </header>
-
-          <section class="installed" id="installed">
-            <div class="section-head">
-              <span class="section-label">Installed</span>
-              <span class="section-note" id="installed-count"></span>
-            </div>
-            <div class="installed-list" id="installed-list"></div>
-          </section>
-
-          <section class="proposed-head">
-            <div class="section-head">
-              <span class="section-label">Proposed by Edith</span>
-              <span class="section-note" id="forge-progress"></span>
-            </div>
-          </section>
 
           <div class="deck" id="deck">
             <div class="card ghost ghost-2"></div>
             <div class="card ghost ghost-1"></div>
             <article class="card live" id="forge-card">
-              <div class="card-kind">PROPOSED SKILL</div>
+              <div class="card-kind">
+                <span>Proposed skill</span>
+                <button class="card-edit" id="forge-edit">Edit</button>
+                <button class="card-edit hidden" id="forge-edit-done">Done</button>
+              </div>
               <h3 id="forge-name"></h3>
+              <input class="card-desc-edit hidden" id="forge-desc-edit" type="text" />
               <p class="card-desc" id="forge-desc"></p>
               <div class="card-why" id="forge-why"></div>
               <pre class="card-body" id="forge-body"></pre>
+              <textarea class="card-body-edit hidden" id="forge-body-edit" spellcheck="false"></textarea>
               <div class="card-src" id="forge-src"></div>
             </article>
           </div>
@@ -160,82 +187,30 @@
           </div>
 
           <footer class="forge-actions" id="forge-actions">
-            <button class="verdict reject" id="forge-reject">
-              <span class="key">&larr;</span> Discard
-            </button>
+            <button class="verdict reject" id="forge-reject"><span class="key">&larr;</span> Discard</button>
             <button class="verdict skip" id="forge-skip">Later</button>
-            <button class="verdict accept" id="forge-accept">
-              Forge <span class="key">&rarr;</span>
-            </button>
+            <button class="verdict accept" id="forge-accept">Forge <span class="key">&rarr;</span></button>
           </footer>
         </div>
       </section>
 
-      <section id="skill-edit" class="modal hidden">
-        <div class="modal-card">
-          <h2 id="skill-edit-name"></h2>
-          <label>What it does
+      <section id="skill-edit" class="overlay hidden">
+        <div class="forge-stage">
+          <header class="forge-head">
+            <span class="forge-title" id="skill-edit-name"></span>
+            <button class="icon-btn" id="skill-edit-cancel" aria-label="Close">&times;</button>
+          </header>
+          <label class="edit-label">What it does
             <input id="skill-edit-desc" type="text" />
             <small>This is what Claude reads to decide whether to use the skill.</small>
           </label>
           <textarea id="skill-edit-body" rows="12" spellcheck="false"></textarea>
           <div class="modal-actions">
-            <button id="skill-edit-cancel">Cancel</button>
+            <button id="skill-edit-close">Cancel</button>
             <button id="skill-edit-save" class="primary">Save</button>
           </div>
         </div>
       </section>
-
-      <section id="connection" class="modal hidden">
-        <div class="modal-card">
-          <h2>Connection</h2>
-          <div class="conn-rows" id="conn-rows"></div>
-          <div class="modal-actions">
-            <button id="conn-reregister">Re-register with Claude</button>
-            <button id="conn-close" class="primary">Close</button>
-          </div>
-        </div>
-      </section>
-
-      <section id="settings" class="modal hidden">
-        <div class="modal-card">
-          <h2>Settings</h2>
-          <p class="settings-note">Edith needs no API key. Claude reads and writes your notes through its own session, on your existing plan.</p>
-
-          <div class="modal-lib">
-            <button id="btn-import" class="primary" title="Add your own files or text">Add content</button>
-            <button id="btn-backfill" title="Requires an API key. Otherwise ask Claude to review your sessions.">Backfill</button>
-            <button id="btn-vault" title="Open the vault folder">Reveal vault</button>
-          </div>
-
-          <details class="advanced">
-            <summary>Advanced &mdash; automatic background distilling</summary>
-            <p class="settings-note">Optional. Lets Edith distil finished sessions on its own using an Anthropic API key, billed separately from your Claude plan. Most people should leave this empty and just ask Claude instead.</p>
-            <label>Anthropic API key
-              <input id="set-key" type="password" placeholder="sk-ant-..." />
-              <small>Stored locally. Falls back to <code>ANTHROPIC_API_KEY</code>.</small>
-            </label>
-            <label>Model <input id="set-model" type="text" /></label>
-            <label>Minimum turns to distil <input id="set-minturns" type="number" min="1" max="50" /></label>
-            <label class="row"><input id="set-auto" type="checkbox" /> Distil new sessions automatically</label>
-          </details>
-          <div class="modal-actions">
-            <button id="set-cancel">Cancel</button>
-            <button id="set-save" class="primary">Save</button>
-          </div>
-        </div>
-      </section>
-
-      <footer id="activity">
-        <button class="presence" id="presence" title="Connection details">
-          <span class="presence-dot" id="presence-dot"></span>
-          <span class="presence-text" id="presence-text">Edith on standby</span>
-        </button>
-        <div id="activity-inner"></div>
-        <button class="forge-chip hidden" id="forge-chip" title="Review proposed skills">
-          <span class="forge-anvil">&#9874;</span><span id="forge-count">0</span>
-        </button>
-      </footer>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

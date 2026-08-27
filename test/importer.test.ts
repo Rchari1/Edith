@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Vault } from '@core/vault/vault.js';
 import { SqliteSearchProvider } from '@core/vault/search.js';
-import { importFiles, importText, titleFromFilename, readImportable } from '@core/importer/index.js';
+import {
+  importFiles,
+  importText,
+  titleFromFilename,
+  titleFromBody,
+  readImportable
+} from '@core/importer/index.js';
 import { tmpDir, rm } from './helpers.js';
 
 describe('titleFromFilename', () => {
@@ -11,6 +17,42 @@ describe('titleFromFilename', () => {
     expect(titleFromFilename('/a/b/my-great_note.md')).toBe('My Great Note');
     expect(titleFromFilename('/a/camelCaseThing.txt')).toBe('Camel Case Thing');
     expect(titleFromFilename('/a/.md')).toBe('Untitled');
+  });
+});
+
+describe('titleFromBody', () => {
+  it('names a note from its first line', () => {
+    expect(titleFromBody('The fluid model is the whole frame\n\nmore text')).toBe(
+      'The fluid model is the whole frame'
+    );
+  });
+
+  it('strips leading markdown', () => {
+    expect(titleFromBody('## Distillation trades two pairs for one')).toBe(
+      'Distillation trades two pairs for one'
+    );
+    expect(titleFromBody('- a bulleted opening')).toBe('a bulleted opening');
+    expect(titleFromBody('> a quoted opening')).toBe('a quoted opening');
+    expect(titleFromBody('1. a numbered opening')).toBe('a numbered opening');
+  });
+
+  it('skips blank lines to find the first real one', () => {
+    expect(titleFromBody('\n\n   \nActual first line')).toBe('Actual first line');
+  });
+
+  it('truncates long openings on a word boundary', () => {
+    const long =
+      'Memory is bounded by twice the link length which is the halving argument and it keeps going well past any reasonable title length';
+    const t = titleFromBody(long);
+    expect(t.length).toBeLessThanOrEqual(73);
+    expect(t.endsWith('\u2026')).toBe(true);
+    expect(t).not.toMatch(/\s\u2026$/);
+  });
+
+  it('falls back to Untitled when there is nothing to name', () => {
+    expect(titleFromBody('')).toBe('Untitled');
+    expect(titleFromBody('   \n  ')).toBe('Untitled');
+    expect(titleFromBody('###   ')).toBe('Untitled');
   });
 });
 
@@ -121,8 +163,13 @@ describe('importer', () => {
     await expect(importText(vault, 'Title', '   ')).rejects.toThrow(/empty/i);
   });
 
-  it('falls back to Untitled when no title is given', async () => {
+  it('names the note from the body when no title is given', async () => {
     const { id } = await importText(vault, '', 'body only');
+    expect(id).toBe('body-only');
+  });
+
+  it('still falls back to Untitled when the body has nothing to name it', async () => {
+    const { id } = await importText(vault, '', '###\n\nrest of it');
     expect(id).toBe('untitled');
   });
 

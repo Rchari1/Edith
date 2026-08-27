@@ -221,3 +221,53 @@ describe('discoverability', () => {
     rm(dir);
   });
 });
+
+describe('editing a proposal before deciding', () => {
+  let dir: string;
+  let forge: Forge;
+
+  beforeEach(async () => {
+    dir = tmpDir('sb-edit-');
+    forge = new Forge(dir);
+    await forge.init();
+    await forge.propose(draft);
+  });
+  afterEach(() => rm(dir));
+
+  it('edits a pending proposal in place', async () => {
+    const edited = await forge.editProposal('add-an-mcp-tool', { body: 'my own steps' });
+    expect(edited?.body).toBe('my own steps');
+    expect(forge.get('add-an-mcp-tool')?.body).toBe('my own steps');
+    expect(forge.get('add-an-mcp-tool')?.status).toBe('proposed');
+  });
+
+  it('keeps rationale and provenance, which are not the user\'s to rewrite', async () => {
+    const before = forge.get('add-an-mcp-tool')!;
+    const after = await forge.editProposal('add-an-mcp-tool', { body: 'changed' });
+    expect(after?.rationale).toBe(before.rationale);
+    expect(after?.sources).toEqual(before.sources);
+    expect(after?.created).toBe(before.created);
+  });
+
+  it('flattens a multi-line description, which would break the frontmatter', async () => {
+    const after = await forge.editProposal('add-an-mcp-tool', { description: 'one\ntwo' });
+    expect(after?.description).toBe('one two');
+  });
+
+  it('survives a reload, so the edit is what gets installed', async () => {
+    await forge.editProposal('add-an-mcp-tool', { body: 'persisted steps' });
+    const reopened = new Forge(dir);
+    await reopened.init();
+    expect(reopened.get('add-an-mcp-tool')?.body).toBe('persisted steps');
+  });
+
+  it('refuses to edit something already decided', async () => {
+    await forge.setStatus('add-an-mcp-tool', 'accepted', '/x');
+    // Editing a decided proposal would diverge from the skill on disk.
+    expect(await forge.editProposal('add-an-mcp-tool', { body: 'nope' })).toBeNull();
+  });
+
+  it('returns null for an unknown id', async () => {
+    expect(await forge.editProposal('nope', { body: 'x' })).toBeNull();
+  });
+});

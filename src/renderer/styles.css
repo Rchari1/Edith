@@ -1,25 +1,112 @@
+/*
+ * ============================================================================
+ * TOKENS
+ * ============================================================================
+ * The app is monochrome by intent: the galaxy, the panel and every control are
+ * built from white at low alpha over near-black. Colour is reserved - it only
+ * ever means state, so when something goes coloured it is worth reading.
+ *
+ * Rules this file keeps:
+ *   - radius is always --r (4px); the only exception is a circle (50%)
+ *   - surfaces and lines come from the alpha ladder, never a new hex
+ *   - state colour comes from --ok / --warn / --bad / --live, never inline hex
+ *   - one easing curve, --ease, for everything that moves
+ */
 :root {
-  --bg: #0A0A0A;
-  --panel: #101010;
+  /* --- ground ------------------------------------------------------------ */
+  --bg: #0a0a0a;
   --panel-2: #1a1a1a;
   --border: #2e2e2e;
-  --text: #f2f2f2;
-  --muted: #9a9a9a;
-  --accent: #ffffff;
-  --opened: #ffffff;
-  --amber: #c4c4c4;
-  --green: #e0e0e0;
-  --violet: #bdbdbd;
-  --danger: #ffffff;
-  /* the glass */
+
+  /* --- ink --------------------------------------------------------------- */
+  --text: #f2f2f2;   /* primary copy, values, active icons */
+  --muted: #9a9a9a;  /* labels, keys, placeholder, idle icons */
+  --dim: #6b6b6b;    /* rail icons at rest - present but receding */
+  --accent: #ffffff; /* the selected thing, and nothing else */
+
+  /* --- glass -------------------------------------------------------------
+   * One slab of frosted glass holds the whole UI. --glass is its ground,
+   * --glass-soft is a raised control on top of it, --glass-border every line. */
   --glass: rgba(8, 8, 8, 0.35);
   --glass-soft: rgba(255, 255, 255, 0.06);
   --glass-border: rgba(255, 255, 255, 0.1);
+
+  /* --- the alpha ladder --------------------------------------------------
+   * Every surface and line is white at one of these. Adding a step is a design
+   * decision; reaching for an arbitrary alpha is not. */
+  --a-hairline: rgba(255, 255, 255, 0.04);
+  --a-surface: rgba(255, 255, 255, 0.06);
+  --a-raised: rgba(255, 255, 255, 0.09);
+  --a-hover: rgba(255, 255, 255, 0.12);
+  --a-strong: rgba(255, 255, 255, 0.22);
+  --a-edge: rgba(255, 255, 255, 0.4);
+
+  /* Anything that lights up under the cursor uses this one fill: rows in a
+   * list, rail icons, the pickers, a dropzone being dragged over. */
+  --fill-hover: rgba(255, 255, 255, 0.05);
+
+  /* The selected thing: a filled chip in the rail, the open pane's button. */
+  --fill-selected: rgba(255, 255, 255, 0.07);
+  /* The one button that commits: Add, Save, Re-register. */
+  --fill-primary: rgba(255, 255, 255, 0.14);
+
+  /* The sheen down the glass. One recipe, so every pane catches the light at
+   * the same angle - four panes had this gradient written out identically. */
+  --sheen: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015) 42%);
+
+  /* --- state -------------------------------------------------------------
+   * The only colour in the app. Used for feedback that must be read as
+   * feedback - never for decoration, and never on the graph, which stays
+   * monochrome so Claude's attention is the only thing that stands out. */
+  --live: #7dd3fc;  /* Claude is working right now */
+  --ok: #7dd3fc;    /* connected, resolved, healthy */
+  --warn: #f5b942;  /* degraded but working */
+  --bad: #ff8f8f;   /* failed, missing, empty */
+  --bad-edge: rgba(255, 143, 143, 0.26);
+
+  /* --- graph states ------------------------------------------------------
+   * Deliberately greys, not colours. The galaxy reads as one material; a note
+   * being considered is a change in brightness, not in hue. */
+  --state-considered: #c4c4c4;
+  --state-opened: #ffffff;
+  --state-saved: #e0e0e0;
+
+  /* --- form ---------------------------------------------------------------
+   * One radius. Everything square-cornered is 4px, everything round is a dot. */
+  --r: 4px;
+
+  /* --- type ---------------------------------------------------------------
+   * Six steps, and nothing between them. The gaps are 1px at the bottom
+   * because this is a dense desktop panel - a half-pixel difference is not a
+   * hierarchy, it is an accident, and the file had six of those.
+   *
+   *   micro    badges and counts
+   *   small    labels, meta, row keys, buttons - the app's default chrome
+   *   body     values, inputs, list titles
+   *   read     text you actually read or write: note bodies, the editor
+   *   title    section and note headings
+   *   display  the nameplate, and glyph buttons like the close x
+   */
+  --fs-micro: 10px;
+  --fs-small: 11px;
+  --fs-body: 12px;
+  --fs-read: 13px;
+  --fs-title: 15px;
+  --fs-display: 18px;
+
+  /* --- motion -------------------------------------------------------------
+   * One curve. Three durations: --t-snap for feedback that must feel
+   * instant, --t-move for anything that travels, --t-fade for state that
+   * should drift rather than switch. */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --t-snap: 0.12s;
+  --t-move: 0.2s;
+  --t-fade: 0.4s;
 }
 
 .glass {
   background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015) 42%),
+    var(--sheen),
     var(--glass);
   backdrop-filter: blur(9px) saturate(150%);
   -webkit-backdrop-filter: blur(9px) saturate(150%);
@@ -48,20 +135,34 @@ body {
   pointer-events: none;
 }
 
-/* ---------- sidebar: frosted glass floating over the galaxy ---------- */
-#sidebar {
+/*
+ * ---------- shell: one slab of frosted glass over the galaxy ----------
+ * The rail and the panel are two divisions of a single surface, not two
+ * floating cards, so the glass, the border and the radius all live here and
+ * the children stay transparent. Folding the panel narrows the shell to the
+ * width of the rail.
+ */
+#shell {
   position: absolute;
   /* Below the macOS traffic lights - window chrome and glass never overlap. */
   top: 48px; left: 14px; bottom: 52px;
-  width: 282px;
+  width: 336px;
   z-index: 20;
-  border-radius: 4px;
+  border-radius: var(--r);
   background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015) 42%),
+    var(--sheen),
     var(--glass);
   backdrop-filter: blur(9px) saturate(150%);
   -webkit-backdrop-filter: blur(9px) saturate(150%);
   border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+#sidebar {
+  position: absolute;
+  top: 0; bottom: 0; left: 44px; right: 0;
+  /* The only line between the two halves. */
+  border-left: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -73,14 +174,14 @@ body {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 18px;
+  font-size: var(--fs-display);
   line-height: 1;
   cursor: pointer;
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--r);
   flex: none;
 }
-.icon-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.icon-btn:hover { color: var(--text); background: var(--a-surface); }
 
 .search-wrap {
   display: flex;
@@ -93,37 +194,55 @@ body {
   width: 100%;
   background: var(--glass-soft);
   border: 1px solid var(--glass-border);
-  border-radius: 4px;
+  border-radius: var(--r);
   color: var(--text);
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   outline: none;
 }
 #search:focus { border-color: rgba(255, 255, 255, 0.5); }
 #search::placeholder { color: var(--muted); }
 
+/*
+ * The native clear button paints itself in the macOS accent colour, the one
+ * splash of blue in a monochrome app. Draw it ourselves instead, in the same
+ * thin-stroke language as the rail icons.
+ */
+#search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  cursor: pointer;
+  background-color: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M6 6 18 18M18 6 6 18'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M6 6 18 18M18 6 6 18'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+#search::-webkit-search-cancel-button:hover { background-color: var(--text); }
+
+
 .note-list { flex: 1; overflow-y: auto; padding: 4px 8px; min-height: 0; }
 .note-item {
   padding: 7px 9px;
-  border-radius: 4px;
+  border-radius: var(--r);
   cursor: pointer;
   border: 1px solid transparent;
 }
-.note-item:hover { background: rgba(255, 255, 255, 0.05); }
-.note-item.active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.14); }
-.note-item .t { display: block; font-size: 12px; }
-.note-item .m { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
-.note-item .snip { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
-.list-empty { padding: 14px 10px; color: var(--muted); font-size: 12px; }
+.note-item:hover { background: var(--fill-hover); }
+.note-item.active { background: var(--a-raised); border-color: var(--fill-primary); }
+.note-item .t { display: block; font-size: var(--fs-body); }
+.note-item .m { display: block; font-size: var(--fs-small); color: var(--muted); margin-top: 1px; }
+.note-item .snip { display: block; font-size: var(--fs-small); color: var(--muted); margin-top: 3px; }
+.list-empty { padding: 14px 10px; color: var(--muted); font-size: var(--fs-body); }
 
 /* ---------- status ---------- */
-.status { border-top: 1px solid var(--glass-border); padding: 10px 14px 12px; font-size: 11px; }
+.status { border-top: 1px solid var(--glass-border); padding: 10px 14px 12px; font-size: var(--fs-small); }
 .status-row { display: flex; justify-content: space-between; padding: 2px 0; }
 .status-row .k { color: var(--muted); }
 .status-row .v { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
-.status-row .v.warn { color: var(--amber); }
-.status-row .v.bad { color: var(--danger); }
-.status-row .v.good { color: var(--green); }
+.status-row .v.warn { color: var(--state-considered); }
+.status-row .v.bad { color: var(--bad); }
+.status-row .v.good { color: var(--state-saved); }
 
 .actions { display: flex; gap: 6px; margin-top: 10px; }
 .modal-lib { display: flex; gap: 6px; margin-bottom: 13px; }
@@ -132,26 +251,26 @@ body {
   background: var(--glass-soft);
   border: 1px solid var(--glass-border);
   color: var(--text);
-  border-radius: 4px;
+  border-radius: var(--r);
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   cursor: pointer;
 }
 .actions button:hover, .modal-actions button:hover, .detail-actions button:hover { background: rgba(255, 255, 255, 0.11); }
 .actions button:disabled { opacity: 0.45; cursor: default; }
-button.primary { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.4); }
-button.primary:hover { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.55); }
-button.danger:hover { border-color: var(--danger); color: var(--danger); }
+button.primary { background: var(--fill-primary); border-color: var(--a-edge); }
+button.primary:hover { background: var(--a-strong); border-color: rgba(255, 255, 255, 0.55); }
+button.danger:hover { border-color: var(--bad); color: var(--bad); }
 
 /* ---------- stage: full-bleed galaxy behind the glass ---------- */
 #stage { position: absolute; inset: 0; overflow: hidden; }
 #graph { width: 100%; height: 100%; display: block; cursor: grab; }
 
 .legend {
-  position: absolute; left: 310px; bottom: 46px;
+  position: absolute; left: 364px; bottom: 46px;
   display: flex; flex-direction: column; gap: 7px;
   align-items: flex-start;
-  font-size: 11px; color: var(--muted);
+  font-size: var(--fs-small); color: var(--muted);
   pointer-events: none;
 }
 .legend-row { display: flex; gap: 13px; align-items: center; }
@@ -159,28 +278,28 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 .legend-row.states { opacity: 0; transition: opacity 0.6s; }
 .legend-row.states.visible { opacity: 1; }
 .legend-row.cats { flex-wrap: wrap; gap: 5px; max-width: min(62vw, 640px); }
-.legend i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 4px; margin-right: 5px; }
-.dot.considered { background: var(--amber); }
-.dot.opened { background: var(--opened); }
-.dot.saved { background: var(--green); }
+.legend i.dot { display: inline-block; width: 7px; height: 7px; border-radius: var(--r); margin-right: 5px; }
+.dot.considered { background: var(--state-considered); }
+.dot.opened { background: var(--state-opened); }
+.dot.saved { background: var(--state-saved); }
 
 .cat-chip {
   pointer-events: auto;
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--glass);
   border: 1px solid var(--glass-border);
-  border-radius: 4px;
+  border-radius: var(--r);
   padding: 2.5px 9px 2.5px 7px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
   cursor: pointer;
   backdrop-filter: blur(8px) saturate(150%);
   -webkit-backdrop-filter: blur(8px) saturate(150%);
   transition: color 0.15s, border-color 0.15s;
 }
-.cat-chip i { width: 7px; height: 7px; border-radius: 4px; background: var(--c); }
+.cat-chip i { width: 7px; height: 7px; border-radius: var(--r); background: var(--c); }
 .cat-chip em { font-style: normal; opacity: 0.75; }
-.cat-chip:hover { color: var(--text); border-color: #4a4a4a; }
+.cat-chip:hover { color: var(--text); border-color: var(--a-strong); }
 .cat-chip.active { color: var(--text); border-color: var(--c); background: rgba(10, 10, 10, 0.92); }
 
 .empty {
@@ -190,8 +309,8 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   text-align: center; padding: 0 40px;
   pointer-events: none;
 }
-.empty h2 { font-size: 15px; font-weight: 600; margin-bottom: 7px; }
-.empty p { color: var(--muted); max-width: 400px; font-size: 12px; }
+.empty h2 { font-size: var(--fs-title); font-weight: 600; margin-bottom: 7px; }
+.empty p { color: var(--muted); max-width: 400px; font-size: var(--fs-body); }
 
 .tooltip {
   position: fixed;
@@ -199,54 +318,82 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   backdrop-filter: blur(8px) saturate(150%);
   -webkit-backdrop-filter: blur(8px) saturate(150%);
   border: 1px solid var(--glass-border);
-  border-radius: 4px;
+  border-radius: var(--r);
   padding: 6px 9px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   pointer-events: none;
   z-index: 40;
   max-width: 260px;
 }
-.tooltip .tt-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.tooltip .tt-meta { color: var(--muted); font-size: var(--fs-small); margin-top: 2px; }
 
 /* ---------- detail: glass panel floating on the right ---------- */
 .detail {
   position: absolute; top: 48px; right: 14px; bottom: 52px;
   width: 420px;
-  border-radius: 4px;
+  border-radius: var(--r);
   background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015) 42%),
+    var(--sheen),
     var(--glass);
   backdrop-filter: blur(9px) saturate(150%);
   -webkit-backdrop-filter: blur(9px) saturate(150%);
   border: 1px solid var(--glass-border);
-  padding: 30px 22px 18px;
+  /* Top matches the sides. The close button is absolutely positioned beside
+   * the title rather than above it, so the heading never needed the extra
+   * 8px it was being given. */
+  padding: 22px 22px 18px;
   overflow-y: auto;
   z-index: 30;
   display: flex; flex-direction: column;
 }
-.detail h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; padding-right: 24px; }
-.detail-meta { color: var(--muted); font-size: 11px; margin-bottom: 14px; line-height: 1.7; }
-.detail-meta code { background: var(--panel-2); padding: 1px 4px; border-radius: 4px; }
-.detail-body { flex: 1; font-size: 13px; line-height: 1.65; white-space: pre-wrap; word-wrap: break-word; }
-.detail-body h3 { font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+/*
+ * The heading's line box is stated rather than inherited, so the close button
+ * can be given the same box and the two centres line up by construction
+ * instead of by a hand-tuned offset.
+ */
+.detail h2 {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 20px;
+  margin-bottom: 6px;
+  padding-right: 26px;
+}
+.detail-meta { color: var(--muted); font-size: var(--fs-small); margin-bottom: 14px; line-height: 1.7; }
+.detail-meta code { background: var(--panel-2); padding: 1px 4px; border-radius: var(--r); }
+.detail-body { flex: 1; font-size: var(--fs-read); line-height: 1.65; white-space: pre-wrap; word-wrap: break-word; }
+.detail-body h3 { font-size: var(--fs-read); font-weight: 600; margin: 12px 0 4px; }
 .detail-actions { display: flex; gap: 6px; margin-top: 16px; }
 .detail .close {
-  position: absolute; top: 22px; right: 18px;
-  background: none; border: none; color: var(--muted);
-  font-size: 19px; cursor: pointer; line-height: 1;
+  position: absolute;
+  /* Same top as the container's padding, same height as the heading's line
+   * box - so the x sits on the first line's midpoint exactly. */
+  top: 22px;
+  right: 18px;
+  height: 20px;
+  width: 20px;
+  display: grid;
+  place-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--r);
+  transition: color var(--t-snap) ease, background var(--t-snap) ease;
 }
-.detail .close:hover { color: var(--text); }
+.detail .close svg { width: 13px; height: 13px; display: block; }
+.detail .close:hover { color: var(--text); background: var(--fill-hover); }
 .link-chip {
   display: inline-block;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r);
   padding: 1px 6px;
   margin: 2px 3px 2px 0;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
-.link-chip:hover { border-color: #4a4a4a; color: var(--accent); }
+.link-chip:hover { border-color: var(--a-strong); color: var(--accent); }
 .link-chip.missing { opacity: 0.5; font-style: italic; }
 
 /* ---------- modal ---------- */
@@ -258,50 +405,45 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 }
 .modal-card {
   background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015) 42%),
+    var(--sheen),
     var(--glass);
   backdrop-filter: blur(9px) saturate(150%);
   -webkit-backdrop-filter: blur(9px) saturate(150%);
   border: 1px solid var(--glass-border);
-  border-radius: 4px;
+  border-radius: var(--r);
   padding: 22px;
   width: 430px;
   max-width: 92vw;
 }
-.modal-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 15px; }
-.modal-card label { display: block; margin-bottom: 13px; font-size: 12px; color: var(--muted); }
+.modal-card h2 { font-size: var(--fs-title); font-weight: 600; margin-bottom: 15px; }
+.modal-card label { display: block; margin-bottom: 13px; font-size: var(--fs-body); color: var(--muted); }
 .modal-card label.row { display: flex; align-items: center; gap: 8px; }
 .modal-card input[type="text"], .modal-card input[type="password"], .modal-card input[type="number"] {
   display: block; width: 100%; margin-top: 5px;
   background: var(--panel-2); border: 1px solid var(--border);
-  border-radius: 4px; color: var(--text); padding: 7px 9px; font-size: 12px; outline: none;
+  border-radius: var(--r); color: var(--text); padding: 7px 9px; font-size: var(--fs-body); outline: none;
 }
-.modal-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.5; }
-.modal-card code { background: var(--panel-2); padding: 1px 3px; border-radius: 4px; }
+.modal-card small { display: block; margin-top: 4px; color: var(--muted); font-size: var(--fs-small); line-height: 1.5; }
+.modal-card code { background: var(--panel-2); padding: 1px 3px; border-radius: var(--r); }
 .modal-actions { display: flex; gap: 8px; margin-top: 6px; }
 
 /* ---------- activity: floating glass pill ---------- */
+/* A quiet marker in the corner of the stage, not a bar across the whole app. */
 #activity {
   position: absolute;
-  left: 14px; right: 14px; bottom: 10px;
-  height: 30px;
+  left: 20px; bottom: 12px;
+  max-width: 46%;
   z-index: 25;
-  border-radius: 4px;
-  background: var(--glass);
-  backdrop-filter: blur(9px) saturate(150%);
-  -webkit-backdrop-filter: blur(9px) saturate(150%);
-  border: 1px solid var(--glass-border);
   display: flex; align-items: center;
-  padding: 0 16px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
 }
 #activity-inner { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#activity .ev-considered { color: var(--amber); }
-#activity .ev-opened { color: var(--opened); }
-#activity .ev-saved { color: var(--green); }
-#activity .ev-error { color: var(--danger); }
+#activity .ev-considered { color: var(--state-considered); }
+#activity .ev-opened { color: var(--state-opened); }
+#activity .ev-saved { color: var(--state-saved); }
+#activity .ev-error { color: var(--bad); }
 
 .hidden { display: none !important; }
 
@@ -314,32 +456,32 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   width: 100%;
   padding: 18px 12px;
   background: var(--panel-2);
-  border: 1px dashed #2e3852;
-  border-radius: 8px;
+  border: 1px dashed var(--glass-border);
+  border-radius: var(--r);
   color: var(--text);
   cursor: pointer;
   margin-bottom: 12px;
 }
-.dropzone:hover { border-color: #3d4d70; background: #1a2030; }
-.dropzone strong { font-size: 12.5px; font-weight: 600; }
-.dropzone small { color: var(--muted); font-size: 10.5px; }
+.dropzone:hover { border-color: var(--a-edge); background: var(--a-surface); }
+.dropzone strong { font-size: var(--fs-read); font-weight: 600; }
+.dropzone small { color: var(--muted); font-size: var(--fs-small); }
 
 .import-files {
   max-height: 96px;
   overflow-y: auto;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 7px 9px;
   margin-bottom: 12px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
 }
 .import-files div { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .or-rule {
   display: flex; align-items: center; gap: 10px;
-  color: var(--muted); font-size: 11px; margin: 4px 0 12px;
+  color: var(--muted); font-size: var(--fs-small); margin: 4px 0 12px;
 }
 .or-rule::before, .or-rule::after {
   content: ""; flex: 1; height: 1px; background: var(--border);
@@ -349,63 +491,44 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   width: 100%;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r);
   color: var(--text);
   padding: 8px 9px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-read);
   resize: vertical;
   outline: none;
   margin-bottom: 13px;
 }
-#import-body:focus { border-color: #33405c; }
-#import-body::placeholder { color: #5d6679; }
+#import-body:focus { border-color: var(--a-edge); }
+#import-body::placeholder { color: var(--muted); }
 
 .mode-choice { display: flex; flex-direction: column; gap: 7px; margin-bottom: 13px; }
 .mode-choice label.row { align-items: flex-start; margin: 0; cursor: pointer; }
 .mode-choice input { margin-top: 2px; }
 .mode-choice span { display: flex; flex-direction: column; }
-.mode-choice strong { color: var(--text); font-size: 12px; font-weight: 500; }
-.mode-choice small { color: var(--muted); font-size: 10.5px; margin-top: 1px; }
+.mode-choice strong { color: var(--text); font-size: var(--fs-body); font-weight: 500; }
+.mode-choice small { color: var(--muted); font-size: var(--fs-small); margin-top: 1px; }
 .mode-choice label.disabled { opacity: 0.45; cursor: default; }
 
+/*
+ * A quiet line, not an alert. The accent bar made every message look like a
+ * failure, so state is carried by the text colour and a matching border tint
+ * instead - the same greys and reds the rest of the panel uses.
+ */
 .import-msg {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--accent);
-  border-radius: 5px;
+  background: var(--glass-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
   padding: 7px 9px;
-  font-size: 11.5px;
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  color: var(--muted);
   margin-bottom: 12px;
 }
-.import-msg.bad { border-left-color: var(--danger); color: var(--danger); }
-.import-msg.good { border-left-color: var(--green); }
+.import-msg.bad { color: var(--bad); border-color: var(--bad-edge); }
+.import-msg.good { color: var(--text); border-color: rgba(255, 255, 255, 0.18); }
 
-/* ---------- keyless-first settings ---------- */
-.settings-note {
-  color: var(--muted);
-  font-size: 11.5px;
-  line-height: 1.55;
-  margin-bottom: 14px;
-}
-.advanced {
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 9px 11px;
-  margin-bottom: 14px;
-  background: var(--panel-2);
-}
-.advanced summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text);
-  list-style: none;
-}
-.advanced summary::-webkit-details-marker { display: none; }
-.advanced summary::before { content: "\25b8"; display: inline-block; margin-right: 7px; color: var(--muted); }
-.advanced[open] summary::before { content: "\25be"; }
-.advanced[open] summary { margin-bottom: 11px; }
-.advanced .settings-note { margin-bottom: 11px; }
 
 .empty-quote {
   color: var(--accent);
@@ -419,12 +542,12 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
+  background: var(--a-hover);
+  border-radius: var(--r);
   background-clip: padding-box;
   border: 2px solid transparent;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb:hover { background: var(--a-strong); background-clip: padding-box; border: 2px solid transparent; }
 
 /* ---------- stage title ----------
    Floats over the graph as a nameplate. Never intercepts pointer events, so it
@@ -438,37 +561,25 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
   pointer-events: none;
   user-select: none;
   opacity: 0.9;
   z-index: 5;
 }
 
-.stage-mark {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  filter: drop-shadow(0 0 7px rgba(125, 211, 252, 0.3));
-}
-
 .stage-headline { display: flex; align-items: baseline; gap: 10px; }
 
 .stage-name {
-  font-size: 16px;
+  font-size: var(--fs-title);
   font-weight: 400;
   letter-spacing: 0.34em;
   text-indent: 0.34em;
   line-height: 1.1;
-  background: linear-gradient(100deg, #7dd3fc 0%, #a78bfa 55%, #f5b942 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
 }
 
 .stage-tagline {
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-weight: 300;
   letter-spacing: 0.16em;
   color: var(--muted);
@@ -478,37 +589,10 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 
 
 /* ---------- presence ----------
-   Resting state of the footer. The blink is the only moving thing down here,
-   so it reads as a heartbeat rather than decoration; on standby the dot is
-   still and dim so an idle Edith looks calm rather than broken. */
-.presence {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 0 0 auto;
-  padding-right: 14px;
-  margin-right: 14px;
-  border-right: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.presence-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  opacity: 0.35;
-  flex: 0 0 6px;
-  transition: opacity 0.4s ease, background 0.4s ease;
-}
-.presence.active .presence-dot {
-  background: #7dd3fc;
-  opacity: 1;
-  animation: presence-blink 1.5s ease-in-out infinite;
-}
-.presence.active .presence-text { color: var(--text); }
-
+   The blink is the only moving thing in the app, so it reads as a heartbeat
+   rather than decoration; on standby the dot is still and dim so an idle
+   Edith looks calm rather than broken. It lives in the rail icon and at the
+   head of the Connection pane. */
 @keyframes presence-blink {
   0%, 100% { opacity: 1;    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.45); }
   50%      { opacity: 0.35; box-shadow: 0 0 0 4px rgba(125, 211, 252, 0); }
@@ -529,16 +613,16 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
   width: 100%;
   background: var(--panel-2);
   border: 1px solid var(--glass-border);
-  border-radius: 6px;
+  border-radius: var(--r);
   color: var(--text);
   padding: 11px 12px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-read);
   line-height: 1.65;
   resize: none;
   outline: none;
 }
-.detail-editor:focus { border-color: #3d4d70; }
+.detail-editor:focus { border-color: var(--a-edge); }
 #detail-title.editing {
   outline: none;
   border-bottom: 1px solid var(--glass-border);
@@ -547,7 +631,7 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 .edit-hint {
   flex: 1;
   align-self: center;
-  font-size: 10.5px;
+  font-size: var(--fs-small);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -556,332 +640,690 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
    Every failure this app has actually had was silent: a stale port, a second
    instance, a hook pointing nowhere. This is the one screen that answers
    "why is nothing happening" without a terminal. */
-.presence {
-  background: none;
-  border: none;
-  font: inherit;
-  cursor: pointer;
-  padding: 0 14px 0 0;
+/* The pane leads with the live state - the question it exists to answer. */
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  margin-bottom: 13px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  background: var(--glass-soft);
 }
-.presence:hover .presence-text { color: var(--text); }
+.conn-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.4;
+  flex: 0 0 7px;
+  transition: opacity var(--t-fade) ease, background var(--t-fade) ease;
+}
+/* Reads like the rows below it: a key, then the value. */
+.conn-status-key {
+  font-size: var(--fs-small);
+  color: var(--muted);
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+.conn-status-text {
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.conn-status-note {
+  font-size: var(--fs-small);
+  color: var(--muted);
+  opacity: 0.75;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.conn-status.live .conn-status-dot {
+  background: var(--live);
+  opacity: 1;
+  animation: presence-blink 1.5s ease-in-out infinite;
+}
+.conn-status.live .conn-status-text { color: var(--text); }
 
-.conn-rows { display: flex; flex-direction: column; gap: 1px; margin-bottom: 16px; }
+.conn-rows { display: flex; flex-direction: column; gap: 1px; margin-bottom: 13px; }
+.panel-form .conn-k { flex: 0 0 96px; }
+.panel-form .conn-row { font-size: var(--fs-small); }
 .conn-row {
   display: flex;
   align-items: baseline;
   gap: 10px;
   padding: 7px 0;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .conn-row:last-child { border-bottom: none; }
 .conn-k { flex: 0 0 116px; color: var(--muted); }
 .conn-v { flex: 1; min-width: 0; color: var(--text); word-break: break-all; }
-.conn-v.ok { color: #7dd3fc; }
-.conn-v.warn { color: #f5b942; }
-.conn-v.bad { color: #ff8f8f; }
+.conn-v.ok { color: var(--live); }
+.conn-v.warn { color: var(--warn); }
+.conn-v.bad { color: var(--bad); }
 .conn-note {
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
   line-height: 1.55;
   margin-bottom: 14px;
 }
 
-/* ---------- the forge ----------
-   A deck, not a list. One decision at a time is the right shape for approval:
-   a checklist invites bulk-accepting things nobody read, which is how a queue
-   of proposals turns into a directory of skills that never get used. */
+/* ---------------- skills ---------------- */
 
-.forge-chip {
+.pane-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px 8px;
+}
+
+.pane-tab {
+  -webkit-app-region: no-drag;
+  flex: 1;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.pane-tab:hover { color: var(--text); background: var(--a-hairline); }
+.pane-tab.active {
+  color: var(--text);
+  background: var(--fill-selected);
+  border-color: var(--glass-border);
+}
+
+.pane-tab .tally { margin-left: 5px; opacity: 0.6; font-size: var(--fs-micro); }
+
+.skill-list { flex: 1; overflow-y: auto; padding: 4px 8px; min-height: 0; }
+
+.skill-item {
+  padding: 8px 9px;
+  border-radius: var(--r);
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.skill-item:hover { background: var(--fill-hover); border-color: var(--glass-border); }
+
+.skill-item .n {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-body);
+}
+
+/* ---------------- math ---------------- */
+
+/* KaTeX ships light-theme colours; inherit the pane's instead. */
+/* The body is pre-wrap for prose; KaTeX lays out its own spacing and must not
+   inherit that, or its spans pick up stray gaps. */
+.detail-body .katex { color: var(--text); font-size: 1.02em; white-space: normal; }
+
+.detail-body .katex-display {
+  margin: 12px 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Long equations scroll inside their own block rather than widening the pane. */
+.detail-body .katex-display > .katex { text-align: left; white-space: nowrap; }
+
+.detail-body code.tex-bad {
+  color: var(--bad);
+  border-bottom: 1px dotted var(--bad-edge);
+}
+
+/* A skill that has not run has no path to draw; say so quietly. */
+
+.skill-item.openable { cursor: pointer; }
+.skill-item.active { background: var(--a-raised); border-color: var(--fill-primary); }
+
+/* ---------------- import sources ---------------- */
+
+.source-tabs { display: flex; gap: 2px; margin-bottom: 12px; }
+
+.source-tab {
+  flex: 1;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.source-tab:hover { color: var(--text); background: var(--a-hairline); }
+.source-tab.active {
+  color: var(--text);
+  background: var(--fill-selected);
+  border-color: var(--glass-border);
+}
+
+.source-pane { min-height: 132px; }
+
+/* Types the importer cannot take yet, shown so the gap is visible not hidden. */
+.dropzone .soon { color: var(--muted); opacity: 0.55; margin-top: 2px; }
+.dropzone.dragging { border-color: rgba(255, 255, 255, 0.35); background: var(--fill-hover); }
+
+
+/* Staged rows: name, a type badge, and whether it can actually be taken. */
+.import-files .file-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  margin-left: 12px;
-  padding: 3px 9px;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: var(--fs-body);
+}
+
+.import-files .file-row .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-files .file-row .badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
   border: 1px solid var(--glass-border);
-  border-radius: 999px;
+  border-radius: var(--r);
+  padding: 1px 5px;
+}
+.import-files .file-row .state { font-size: var(--fs-small); color: var(--muted); }
+.import-files .file-row.unsupported .fname { opacity: 0.5; }
+.import-files .file-row.unsupported .state { opacity: 0.75; }
+.import-files .file-row .drop {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; font-size: var(--fs-read); line-height: 1; padding: 0 2px;
+}
+.import-files .file-row .drop:hover { color: var(--text); }
+
+
+/* ---------------- rail ---------------- */
+
+/*
+ * A fixed column of sections. The panel beside it is the body of whichever is
+ * selected; pressing the selected one again folds the panel away and hands the
+ * width back to the graph.
+ */
+#rail {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.rail-spacer { flex: 1; }
+
+.rail-btn {
+  -webkit-app-region: no-drag;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--dim);
+  font-size: var(--fs-title);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.rail-btn:hover { color: var(--muted); background: var(--fill-hover); }
+
+/* The selected pane is marked by a brighter icon, not a heavier chip. */
+.rail-btn.active {
+  color: var(--accent);
+  background: var(--fill-selected);
+  border-color: var(--glass-border);
+}
+
+/* ---------------- panel ---------------- */
+
+.panel-head { padding: 12px 14px 8px; }
+
+.panel-title {
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Folded away: the rail stays, the list goes, the graph gets the room. */
+#app.panel-collapsed #shell { width: 46px; }
+#app.panel-collapsed #sidebar {
+  opacity: 0;
+  transform: translateX(-14px);
+  pointer-events: none;
+}
+#app.panel-collapsed .legend { left: 78px; }
+
+/* ---------------- panel panes ---------------- */
+
+.panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* Add and Settings are forms rather than lists, but live in the same column. */
+.panel-form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 14px 14px;
+}
+
+.panel-form h2 { display: none; }
+
+.panel-form label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+/* Checkbox rows keep their control beside the text, not stacked above it. */
+.panel-form label.row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.panel-form input[type='text'],
+.panel-form input[type='password'],
+.panel-form input[type='number'],
+.panel-form input[type='url'],
+.panel-form textarea {
+  width: 100%;
+  margin-top: 4px;
   background: var(--glass-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  animation: forge-arrive 0.5s ease;
+  font-size: var(--fs-body);
+  padding: 6px 8px;
 }
-.forge-chip:hover { border-color: rgba(255,255,255,0.28); }
-.forge-anvil { opacity: 0.85; }
-/* No badge when nothing is pending - the chip is then just a way in. */
-#forge-count:empty { display: none; }
-.forge-anvil.big { font-size: 30px; opacity: 0.35; }
 
-@keyframes forge-arrive {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
+.panel-form textarea { resize: vertical; }
+
+/* The action rows were laid out for a modal footer; in a column they stack. */
+.panel-form .modal-actions,
+.panel-form .modal-lib {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.panel-form .modal-lib button { flex: 1; }
+
+/*
+ * The commit button sits at the end of the form rather than spanning it - a
+ * full-width bar reads as the panel's subject, when it is only the last step.
+ */
+.panel-form .modal-actions { justify-content: flex-end; }
+.panel-form .modal-actions button {
+  flex: 0 0 auto;
+  min-width: 72px;
+  padding: 5px 14px;
+}
+
+.panel-form .source-pane { min-height: 0; }
+
+/*
+ * The action row's 12px is the only gap between a source and the Add button.
+ * The textarea used to add its own 13px on top, which is why Paste sat
+ * further down than Files and Link.
+ */
+.panel-form #import-body {
+  margin-bottom: 0;
+  /* A textarea is inline by default and sits on the text baseline, leaving
+   * a few pixels of descender space beneath it. Block removes that, so the
+   * 12px above is the whole gap. */
+  display: block;
+}
+.panel-form .dropzone { width: 100%; }
+
+/*
+ * Connection's icon is the status light itself. It takes the rail's own colour
+ * so it dims and brightens with the others, and goes blue while Claude is
+ * working - the same signal the footer light gives, in the nav.
+ */
+.rail-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  transition: background var(--t-fade) ease;
+}
+.rail-btn.live .rail-dot {
+  background: var(--live);
+  animation: presence-blink 1.5s ease-in-out infinite;
+}
+
+/* Icons sit small and light; the rail should read as a margin, not a toolbar. */
+.rail-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+/* Two ways to fill one list, so they carry equal weight. */
+.pick-row { display: flex; gap: 6px; margin-top: 8px; }
+
+.pick-row button {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.pick-row button:hover { color: var(--text); background: var(--fill-hover); }
+
+
+/* ---------------- motion ---------------- */
+
+/*
+ * Nothing snaps. The panel eases out to the left rather than vanishing, and a
+ * pane that becomes visible rises a few pixels as it fades in. Panes toggle
+ * `display`, which cannot transition, so they use a keyframe that runs the
+ * moment the element is shown.
+ */
+#shell { transition: width var(--t-move) var(--ease); }
+
+#sidebar {
+  transform-origin: left center;
+  transition:
+    opacity var(--t-move) var(--ease),
+    transform var(--t-move) var(--ease);
+}
+
+@keyframes pane-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.note-list:not(.hidden),
+.skill-list:not(.hidden),
+.panel-form:not(.hidden) {
+  animation: pane-in var(--t-move) var(--ease) both;
+}
+
+@keyframes detail-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+#detail:not(.hidden) {
+  animation: detail-in var(--t-move) var(--ease) both;
+}
+
+/* The graph re-centres when the panel folds; ease that too. */
+.legend { transition: left var(--t-move) var(--ease); }
+
+/* Rail feedback should feel immediate but not abrupt. */
+.rail-btn { transition: color var(--t-snap) ease, background var(--t-snap) ease, border-color var(--t-snap) ease; }
+
+
+/* Rows settle rather than flicking. */
+.note-item,
+.skill-item { transition: background var(--t-snap) ease, border-color var(--t-snap) ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  #shell,
+  #sidebar,
+  .legend,
+  .rail-btn,
+  .note-item,
+  .skill-item { transition: none; }
+
+  .note-list:not(.hidden),
+  .skill-list:not(.hidden),
+  .panel-form:not(.hidden),
+  #detail:not(.hidden) { animation: none; }
+}
+
+/* ---------- the forge ----------
+   Built on the token system rather than beside it: no raw hex, one radius, the
+   type scale, the shared easing and durations.
+
+   The deck is the one overlay left in the interface. A panel is not a dialog,
+   which is why everything else moved into the rail - but a review queue asks
+   for a single decision at a time and the card has to be able to leave the
+   frame. That is a flow, not a section. */
+
+.forge-anvil { opacity: 0.85; }
+
+/* The rail draws line icons; this one is a glyph, so it is sized and weighted
+   by hand to sit at the same optical size as the strokes beside it rather than
+   at whatever the font gives it. */
+.rail-glyph {
+  display: block;
+  /* 15px, not the 20px her SVGs use: this is a filled glyph against 1.15px
+     strokes, so matching the box would read far heavier than its neighbours. */
+  font-size: 15px;
+  line-height: 1;
+  opacity: 1;
+}
+
+/* The panel is the forge: two sections, what you have and what is waiting. */
+.forge-section { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
+.forge-section .section-head { margin-bottom: 2px; }
+.skill-item.proposed .n { color: var(--muted); }
+.review-cue {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+.skill-item.proposed:hover .review-cue { color: var(--text); }
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass);
+  backdrop-filter: blur(9px) saturate(140%);
+  -webkit-backdrop-filter: blur(9px) saturate(140%);
 }
 
 .forge-stage {
   width: 560px;
-  max-width: 94vw;
+  max-width: 92vw;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.forge-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  position: relative;
-}
-.forge-title { font-size: 12px; letter-spacing: 0.22em; color: var(--text); }
-.forge-progress { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; }
-.forge-head .close { position: static; margin-left: auto; }
-
-/* the deck: two ghosts behind the live card give it depth and say "more" */
-.deck { position: relative; height: 360px; }
-
-.card {
-  position: absolute;
-  inset: 0;
-  border-radius: 12px;
-  border: 1px solid var(--glass-border);
-  background: var(--panel);
-}
-.card.ghost { background: var(--panel-2); }
-.ghost-1 { transform: translateY(9px) scale(0.975); opacity: 0.55; }
-.ghost-2 { transform: translateY(18px) scale(0.95); opacity: 0.28; }
-
-.card.live {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+  gap: 14px;
   padding: 20px 22px;
-  overflow: hidden;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
-  transition: transform 0.34s cubic-bezier(0.3, 0, 0.2, 1), opacity 0.34s ease;
-}
-.card.live.out-left  { transform: translateX(-130%) rotate(-9deg); opacity: 0; }
-.card.live.out-right { transform: translateX(130%) rotate(9deg); opacity: 0; }
-.card.live.in        { animation: card-in 0.32s cubic-bezier(0.3, 0, 0.2, 1); }
-
-@keyframes card-in {
-  from { transform: translateY(14px) scale(0.97); opacity: 0; }
-  to   { transform: none; opacity: 1; }
-}
-
-.card-kind { font-size: 10px; letter-spacing: 0.24em; color: var(--muted); }
-.card.live h3 { font-size: 17px; font-weight: 500; }
-.card-desc { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
-
-.card-why {
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--text);
-  background: var(--glass-soft);
-  border-left: 2px solid var(--glass-border);
-  border-radius: 0 5px 5px 0;
-  padding: 8px 11px;
-}
-.card-why:empty { display: none; }
-
-.card-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  margin: 0;
-  padding: 11px 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  font-size: 11.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  color: var(--text);
-}
-.card-src { font-size: 10.5px; color: var(--muted); }
-.card-src:empty { display: none; }
-
-/* A finished queue is a good state, so it reads as a note rather than a hole
-   where a card should be. */
-.forge-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 26px 2px;
-  text-align: center;
-  color: var(--muted);
-}
-.forge-empty p { color: var(--text); font-size: 12.5px; opacity: 0.8; }
-.forge-empty small { font-size: 11px; line-height: 1.5; }
-
-.forge-actions { display: flex; gap: 9px; }
-.verdict {
-  flex: 1;
-  padding: 9px;
-  border-radius: 8px;
   border: 1px solid var(--glass-border);
+  border-radius: var(--r);
   background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-.verdict:hover { background: #1e1e1e; }
-.verdict.skip { flex: 0 0 92px; color: var(--muted); }
-.verdict.accept:hover { border-color: rgba(125, 211, 252, 0.5); }
-.verdict.reject:hover { border-color: rgba(255, 255, 255, 0.3); }
-.verdict .key {
-  font-size: 10px;
-  opacity: 0.55;
-  border: 1px solid var(--glass-border);
-  border-radius: 4px;
-  padding: 0 5px;
+  background-image: var(--sheen);
 }
 
-/* ---------- the forge ----------
-   Two zones: what you have, then what is proposed. A library and a queue are
-   different things, so they get different shapes - rows for the one you scan,
-   a card for the one you decide on. */
+.forge-head { display: flex; align-items: center; gap: 11px; }
+.forge-title { flex: 1; font-size: var(--fs-read); color: var(--text); }
+.forge-head .icon-btn { margin-left: auto; }
 
 .section-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 9px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--a-hairline);
 }
 .section-label {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text);
-  opacity: 0.75;
-}
-.section-note {
-  font-size: 10.5px;
   color: var(--muted);
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
 }
+.section-note { font-size: var(--fs-micro); color: var(--dim); margin-left: auto; }
+.proposed-head { margin-top: 2px; }
 
-.installed { display: flex; flex-direction: column; }
-.proposed-head { margin-top: 18px; }
 
-.installed-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 190px;
-  overflow-y: auto;
-  margin: 0 -6px;
-  padding: 0 6px;
-}
-
-.installed-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 11px;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  transition: background 0.15s, border-color 0.15s;
-}
-.installed-row:hover {
-  background: var(--glass-soft);
-  border-color: var(--glass-border);
-}
-
-/* One dot, one meaning: Edith installed this and Edith can remove it. Origin
-   is a detail and lives in the label, not in a colour that reads as status. */
-.installed-row .who {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: 0 0 6px;
-  background: #7dd3fc;
-  box-shadow: 0 0 7px rgba(125, 211, 252, 0.45);
-}
-
-.installed-row .meta { flex: 1; min-width: 0; }
-.installed-row .name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--text);
-  letter-spacing: -0.01em;
-}
-.installed-row .desc {
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.45;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.installed-row .origin {
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  opacity: 0.6;
-  flex: 0 0 auto;
-}
-
-.installed-row .row-actions {
+/* Actions ride inside her skill row, revealed on hover, and only for skills
+   Edith installed. A row without them is one the user wrote. */
+.skill-item .row-actions {
   display: flex;
   gap: 5px;
-  flex: 0 0 auto;
+  margin-left: auto;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--t-snap) var(--ease);
 }
-.installed-row:hover .row-actions,
-.installed-row:focus-within .row-actions { opacity: 1; }
-.installed-row:hover .origin { opacity: 0; }
-
-.installed-row button {
+.skill-item:hover .row-actions,
+.skill-item:focus-within .row-actions { opacity: 1; }
+.skill-item .row-actions button {
   background: none;
   border: 1px solid var(--glass-border);
-  border-radius: 5px;
+  border-radius: var(--r);
   color: var(--muted);
   font: inherit;
-  font-size: 10.5px;
-  padding: 3px 9px;
+  font-size: var(--fs-micro);
+  padding: 2px 8px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
 }
-.installed-row button:hover { color: var(--text); border-color: rgba(255,255,255,0.28); }
-.installed-row button.danger:hover { color: #ff8f8f; border-color: rgba(255,143,143,0.45); }
+.skill-item .row-actions button:hover { color: var(--text); border-color: var(--a-edge); }
+.skill-item .row-actions button.danger:hover { color: var(--bad); border-color: var(--bad-edge); }
 
-.installed-empty {
-  font-size: 11.5px;
-  color: var(--muted);
-  padding: 14px 2px;
-  text-align: center;
+.deck { position: relative; height: 320px; }
+.card {
+  position: absolute; inset: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  background: var(--a-surface);
+}
+.ghost-1 { transform: translateY(8px) scale(0.978); opacity: 0.5; }
+.ghost-2 { transform: translateY(16px) scale(0.956); opacity: 0.25; }
+
+.card.live {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 17px 19px; overflow: hidden;
+  background: var(--panel-2);
+  background-image: var(--sheen);
+  transition: transform var(--t-move) var(--ease), opacity var(--t-move) var(--ease);
+}
+.card.live.out-left  { transform: translateX(-130%) rotate(-8deg); opacity: 0; }
+.card.live.out-right { transform: translateX(130%) rotate(8deg); opacity: 0; }
+.card.live.in { animation: card-in var(--t-move) var(--ease); }
+@keyframes card-in {
+  from { transform: translateY(12px) scale(0.98); opacity: 0; }
+  to   { transform: none; opacity: 1; }
 }
 
-#skill-edit .modal-card { width: 580px; max-width: 94vw; }
-#skill-edit h2 {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 14px;
-  color: var(--text);
+.card-kind { font-size: var(--fs-micro); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+.card.live h3 { font-size: var(--fs-title); font-weight: 500; }
+.card-desc { font-size: var(--fs-body); color: var(--muted); line-height: 1.55; }
+.card-why {
+  font-size: var(--fs-micro); line-height: 1.6; color: var(--text);
+  background: var(--a-surface);
+  border-left: 2px solid var(--fill-primary);
+  border-radius: 0 var(--r) var(--r) 0;
+  padding: 7px 10px;
 }
+.card-why:empty { display: none; }
+.card-body {
+  flex: 1; min-height: 0; overflow: auto; margin: 0;
+  padding: 10px 11px;
+  background: var(--bg);
+  border: 1px solid var(--a-hairline);
+  border-radius: var(--r);
+  font-size: var(--fs-micro); line-height: 1.6;
+  white-space: pre-wrap; color: var(--text);
+}
+.card-src { font-size: var(--fs-micro); color: var(--dim); }
+.card-src:empty { display: none; }
+
+.forge-empty { display: flex; flex-direction: column; gap: 5px; padding: 22px 2px; text-align: center; color: var(--muted); }
+.forge-empty p { color: var(--text); font-size: var(--fs-body); }
+.forge-empty small { font-size: var(--fs-micro); line-height: 1.5; }
+
+.forge-actions { display: flex; gap: 8px; }
+.verdict {
+  flex: 1; padding: 9px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  background: var(--a-surface);
+  color: var(--text); font: inherit; font-size: var(--fs-body);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background var(--t-snap) var(--ease), border-color var(--t-snap) var(--ease);
+}
+.verdict:hover { background: var(--fill-hover); }
+.verdict.skip { flex: 0 0 88px; color: var(--muted); }
+.verdict.accept:hover { border-color: var(--fill-primary); }
+.verdict .key {
+  font-size: var(--fs-micro); opacity: 0.55;
+  border: 1px solid var(--glass-border); border-radius: var(--r); padding: 0 5px;
+}
+
+.edit-label { display: block; font-size: var(--fs-micro); color: var(--muted); }
 #skill-edit-body {
   width: 100%;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--a-hairline);
+  border-radius: var(--r);
   color: var(--text);
-  padding: 11px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  line-height: 1.65;
-  resize: vertical;
-  outline: none;
-  margin-bottom: 14px;
+  padding: 10px 11px;
+  font: inherit; font-size: var(--fs-micro); line-height: 1.65;
+  resize: vertical; outline: none;
 }
-#skill-edit-body:focus { border-color: #33405c; }
+
+/* ---------- editing a proposal ----------
+   Review is not a binary when a draft is nearly right: rejecting something that
+   needed one line changed throws the whole thing away. Editing happens on the
+   card itself so the decision stays in one place. */
+.card-kind { display: flex; align-items: center; gap: 8px; }
+.card-edit {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 2px 9px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.card-edit:hover { color: var(--text); border-color: var(--a-edge); }
+
+.card-desc-edit,
+.card-body-edit {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--fill-primary);
+  border-radius: var(--r);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  outline: none;
+}
+.card-desc-edit { font-size: var(--fs-body); }
+.card-body-edit {
+  flex: 1;
+  min-height: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  resize: none;
+}
