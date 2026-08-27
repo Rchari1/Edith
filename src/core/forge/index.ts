@@ -5,3 +5,5 @@ export type { InstallResult } from './install.js';
 export type { SkillProposal, ForgeCounts } from './types.js';
 export { seedStarterSkills } from './starter.js';
 export type { SeedResult } from './starter.js';
+export { listInstalled, updateInstalled, deleteInstalled } from './installed.js';
+export type { InstalledSkill } from './installed.js';

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Forge } from '@core/forge/forge.js';
 import { seedStarterSkills } from '@core/forge/starter.js';
+import { listInstalled, updateInstalled, deleteInstalled } from '@core/forge/installed.js';
 import { tmpDir, rm } from './helpers.js';
 
 function bundle(dir: string, id: string, title: string): void {
@@ -15,82 +15,130 @@ function bundle(dir: string, id: string, title: string): void {
 describe('starter kit', () => {
   let vault: string;
   let bundled: string;
-  let forge: Forge;
+  let home: string;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vault = tmpDir('sb-starter-vault-');
     bundled = tmpDir('sb-starter-bundle-');
-    forge = new Forge(vault);
-    await forge.init();
+    home = tmpDir('sb-starter-home-');
     bundle(bundled, 'analyze-codebase', 'Analyze Codebase');
     bundle(bundled, 'review-a-pr', 'Review A PR');
     bundle(bundled, 'brainstorm', 'Brainstorm');
   });
-  afterEach(() => { rm(vault); rm(bundled); });
+  afterEach(() => { rm(vault); rm(bundled); rm(home); });
 
-  it('seeds the kit as proposals, not installed skills', async () => {
-    const r = await seedStarterSkills(forge, bundled, vault);
+  it('installs the kit so Edith works on first open', async () => {
+    const r = await seedStarterSkills(bundled, vault, home);
     expect(r.seeded.sort()).toEqual(['analyze-codebase', 'brainstorm', 'review-a-pr']);
-    expect(forge.counts().proposed).toBe(3);
-    expect(forge.get('review-a-pr')?.status).toBe('proposed');
-    expect(forge.get('review-a-pr')?.body).toBe('step one');
+
+    const installed = await listInstalled(home);
+    expect(installed.map((s) => s.id).sort()).toEqual(['analyze-codebase', 'brainstorm', 'review-a-pr']);
+    expect(installed[0]?.origin).toBe('starter');
+    expect(fs.existsSync(path.join(home, '.claude', 'skills', 'review-a-pr', 'SKILL.md'))).toBe(true);
   });
 
-  it('seeds each skill only once', async () => {
-    await seedStarterSkills(forge, bundled, vault);
-    const second = await seedStarterSkills(forge, bundled, vault);
+  it('installs each skill only once', async () => {
+    await seedStarterSkills(bundled, vault, home);
+    const second = await seedStarterSkills(bundled, vault, home);
     expect(second.seeded).toEqual([]);
     expect(second.skipped).toHaveLength(3);
-    expect(forge.counts().proposed).toBe(3);
   });
 
-  it('does not re-offer something the user rejected', async () => {
-    await seedStarterSkills(forge, bundled, vault);
-    await forge.setStatus('brainstorm', 'rejected');
+  it('does not resurrect a starter skill the user deleted', async () => {
+    await seedStarterSkills(bundled, vault, home);
+    await deleteInstalled('brainstorm', home);
 
-    await seedStarterSkills(forge, bundled, vault);
-    expect(forge.get('brainstorm')?.status).toBe('rejected');
-    expect(forge.counts().proposed).toBe(2);
+    await seedStarterSkills(bundled, vault, home);
+    // Reinstalling something the user removed would make the delete a lie.
+    expect((await listInstalled(home)).map((s) => s.id)).not.toContain('brainstorm');
   });
 
-  it('offers a newly added starter skill without re-offering answered ones', async () => {
-    await seedStarterSkills(forge, bundled, vault);
-    await forge.setStatus('brainstorm', 'rejected');
+  it('installs a newly added starter skill without resurrecting removed ones', async () => {
+    await seedStarterSkills(bundled, vault, home);
+    await deleteInstalled('brainstorm', home);
 
     bundle(bundled, 'capture-this-session', 'Capture This Session');
-    const r = await seedStarterSkills(forge, bundled, vault);
+    const r = await seedStarterSkills(bundled, vault, home);
 
     expect(r.seeded).toEqual(['capture-this-session']);
-    expect(forge.get('brainstorm')?.status).toBe('rejected');
+    expect((await listInstalled(home)).map((s) => s.id)).not.toContain('brainstorm');
   });
 
-  it('bypasses the pending cap, so a new queue is not full before any work', async () => {
-    const small = new Forge(vault, 2);
-    await small.init();
-    const r = await seedStarterSkills(small, bundled, vault);
-    expect(r.seeded).toHaveLength(3);
-    expect(small.counts().proposed).toBe(3);
-  });
+  it("will not overwrite a skill the user wrote themselves", async () => {
+    const dir = path.join(home, '.claude', 'skills', 'brainstorm');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: brainstorm\n---\nmine, hand written');
 
-  it('the cap still applies to Claude after seeding', async () => {
-    const small = new Forge(vault, 2);
-    await small.init();
-    await seedStarterSkills(small, bundled, vault);
-
-    const extra = await small.propose({ title: 'Extra', description: 'x', body: 'y' });
-    expect(extra.proposal).toBeNull();
-    expect(extra.reason).toMatch(/queue is full/i);
+    const r = await seedStarterSkills(bundled, vault, home);
+    expect(r.seeded).not.toContain('brainstorm');
+    expect(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')).toContain('hand written');
   });
 
   it('one malformed starter file does not stop the others', async () => {
     fs.writeFileSync(path.join(bundled, 'broken.md'), '---\n: : :\n---\nbody');
-    const r = await seedStarterSkills(forge, bundled, vault);
+    const r = await seedStarterSkills(bundled, vault, home);
     expect(r.seeded).toEqual(expect.arrayContaining(['analyze-codebase', 'review-a-pr']));
   });
 
   it('is a no-op when no bundle is present', async () => {
-    const r = await seedStarterSkills(forge, path.join(bundled, 'nope'), vault);
+    const r = await seedStarterSkills(path.join(bundled, 'nope'), vault, home);
     expect(r.seeded).toEqual([]);
-    expect(forge.counts().proposed).toBe(0);
+    expect(await listInstalled(home)).toEqual([]);
+  });
+});
+
+describe('installed skills', () => {
+  let bundled: string;
+  let vault: string;
+  let home: string;
+
+  beforeEach(async () => {
+    bundled = tmpDir('sb-inst-bundle-');
+    vault = tmpDir('sb-inst-vault-');
+    home = tmpDir('sb-inst-home-');
+    bundle(bundled, 'review-a-pr', 'Review A PR');
+    await seedStarterSkills(bundled, vault, home);
+  });
+  afterEach(() => { rm(bundled); rm(vault); rm(home); });
+
+  it('lists only skills Edith installed', async () => {
+    const mine = path.join(home, '.claude', 'skills', 'my-own');
+    fs.mkdirSync(mine, { recursive: true });
+    fs.writeFileSync(path.join(mine, 'SKILL.md'), '---\nname: my-own\n---\nhand written');
+
+    const listed = await listInstalled(home);
+    // A delete button must never be offered for something the user wrote.
+    expect(listed.map((s) => s.id)).toEqual(['review-a-pr']);
+  });
+
+  it('edits the body in place, keeping the skill loadable', async () => {
+    const updated = await updateInstalled('review-a-pr', { body: 'new steps' }, home);
+    expect(updated?.body).toBe('new steps');
+
+    const raw = fs.readFileSync(path.join(home, '.claude', 'skills', 'review-a-pr', 'SKILL.md'), 'utf8');
+    expect(raw).toContain('name: review-a-pr');
+    expect(raw).toContain('new steps');
+    expect(raw).toContain('edith-forge');
+  });
+
+  it('keeps a multi-line description on one line, so the frontmatter stays valid', async () => {
+    await updateInstalled('review-a-pr', { description: 'line one\nline two' }, home);
+    const raw = fs.readFileSync(path.join(home, '.claude', 'skills', 'review-a-pr', 'SKILL.md'), 'utf8');
+    expect(raw.split('\n').filter((l) => l.startsWith('description:'))).toHaveLength(1);
+  });
+
+  it('deletes its own skills', async () => {
+    expect((await deleteInstalled('review-a-pr', home)).ok).toBe(true);
+    expect(await listInstalled(home)).toEqual([]);
+  });
+
+  it("refuses to delete a skill the user wrote", async () => {
+    const mine = path.join(home, '.claude', 'skills', 'my-own');
+    fs.mkdirSync(mine, { recursive: true });
+    fs.writeFileSync(path.join(mine, 'SKILL.md'), 'hand written');
+
+    const r = await deleteInstalled('my-own', home);
+    expect(r.ok).toBe(false);
+    expect(fs.existsSync(path.join(mine, 'SKILL.md'))).toBe(true);
   });
 });

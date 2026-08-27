@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
-import type { Forge } from './forge.js';
+import { installProposal } from './install.js';
+import type { SkillProposal } from './types.js';
 
 /** Records which starter skills have already been offered, so they are offered once. */
 const MARKER = path.join('.edith', 'starter-skills.json');
@@ -12,25 +14,23 @@ export interface SeedResult {
 }
 
 /**
- * Offer the bundled starter kit to a new user.
+ * Install the bundled starter kit.
  *
- * A brand new forge is empty, which makes the feature impossible to understand:
- * a deck with nothing in it explains nothing. Seeding a few genuinely useful
- * skills gives it something to be, and teaches the review flow on proposals the
- * user can safely discard.
+ * These are installed rather than queued, so Edith works the moment it is
+ * opened rather than requiring five decisions first. The forge stays for what
+ * Claude proposes from the user's own work; the kit is what the product ships
+ * with, and the installed-skills panel is where someone edits or removes any
+ * of it.
  *
- * They arrive as proposals, not installed skills. Edith proposes and the person
- * decides - shipping skills straight into ~/.claude/skills would break that and
- * put files on someone's machine they never agreed to.
- *
- * Seeded once each, tracked by id. Rejecting one does not bring it back, and a
- * starter skill added in a later version seeds on its own without re-offering
- * the ones already answered.
+ * Installed once each, tracked by id. Deleting one does not bring it back on
+ * the next launch - that would make the delete button a lie - and a starter
+ * skill added in a later version installs on its own without resurrecting
+ * anything already removed.
  */
 export async function seedStarterSkills(
-  forge: Forge,
   bundledDir: string,
-  vaultRoot: string
+  vaultRoot: string,
+  home = os.homedir()
 ): Promise<SeedResult> {
   const markerPath = path.join(vaultRoot, MARKER);
   const already = await readMarker(markerPath);
@@ -55,14 +55,23 @@ export async function seedStarterSkills(
       const parsed = matter(raw);
       const d = parsed.data as Record<string, unknown>;
 
-      await forge.propose({
+      const proposal: SkillProposal = {
         id,
         title: typeof d.title === 'string' ? d.title : id,
         description: typeof d.description === 'string' ? d.description : '',
         body: parsed.content.trim(),
         rationale: typeof d.rationale === 'string' ? d.rationale : '',
-        bypassCap: true
-      });
+        sources: [],
+        status: 'accepted',
+        created: new Date().toISOString()
+      };
+
+      const installed = await installProposal(proposal, home, 'starter');
+      // A name collision with something the user wrote is theirs to keep.
+      if (installed.status !== 'installed') {
+        result.skipped.push(id);
+        continue;
+      }
       result.seeded.push(id);
     } catch {
       // One malformed starter file must not stop the rest being offered.

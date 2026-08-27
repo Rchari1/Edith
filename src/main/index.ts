@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AppState } from './app-state.js';
 import { registerAll, unregisterAll } from '../core/onboarding/register.js';
 import { IMPORTABLE_EXTENSIONS } from '../core/importer/index.js';
+import { listInstalled, updateInstalled, deleteInstalled } from '../core/forge/installed.js';
 import { migrateLegacyUserData } from './migrate.js';
 import type { BrainEvent } from '../core/types.js';
 
@@ -134,6 +135,20 @@ function registerIpc(appState: AppState): void {
       return result;
     }
   );
+
+  ipcMain.handle('forge:installed', () => listInstalled());
+
+  ipcMain.handle('forge:update-installed', async (_e, id: string, patch: { description?: string; body?: string }) => {
+    const r = await updateInstalled(id, patch);
+    send('forge:changed', null);
+    return r;
+  });
+
+  ipcMain.handle('forge:delete-installed', async (_e, id: string) => {
+    const r = await deleteInstalled(id);
+    send('forge:changed', null);
+    return r;
+  });
 
   ipcMain.handle('forge:list', () => ({
     proposals: appState.forge.list(),

@@ -91,22 +91,22 @@ export class AppState extends EventEmitter {
     this.forge = new Forge(this.settings.vaultPath);
     await this.forge.init();
 
-    // Offer the bundled starter kit. Once each, as proposals rather than
-    // installed skills - an empty forge explains nothing, but putting files on
-    // someone's machine unasked is not the answer either.
+    // Install the bundled starter kit, once each. Edith works the moment it is
+    // opened rather than requiring five decisions first; the installed-skills
+    // panel is where any of it can be edited or removed.
     try {
       const seeded = await seedStarterSkills(
-        this.forge,
         path.join(assetsRoot(), 'starter-skills'),
         this.settings.vaultPath
       );
       if (seeded.seeded.length) {
         this.push({
           type: 'status',
-          message: `${seeded.seeded.length} starter skill(s) waiting in the forge`,
+          message: `Installed ${seeded.seeded.length} starter skill(s) - available in a new Claude session`,
           level: 'info',
           at: Date.now()
         });
+        this.emit('forge-changed');
       }
     } catch {
       // A missing or unreadable bundle must never block startup.
