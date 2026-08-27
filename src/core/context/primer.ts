@@ -34,7 +34,13 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
       '`save_note` to keep it. Do not save narration of what happened.',
       '',
       '`list_sessions` and `read_session` can review the user\'s past sessions if they ask you to',
-      'fill the brain. Do not start that unprompted.'
+      'fill the brain. Do not start that unprompted.',
+      '',
+      'Edith also forges skills: `propose_skill` queues a draft for the user to approve. Prefer it',
+      'over general skill-authoring guidance when the skill is for Edith or for this user, and when',
+      'the user names Edith directly, use Edith\'s own tools rather than a generic equivalent.',
+      'Call it immediately rather than interviewing first - the queue is the review step, so a',
+      'reasonable draft now beats a perfect one after three questions.'
     ].join('\n');
   }
 
@@ -65,7 +71,21 @@ export function buildPrimer(vault: Vault, opts: PrimerOptions = {}): string {
     'A note about a project does not mean the user wants to resume that project.',
     'If nothing relevant comes back, carry on without mentioning the search.',
     '',
-    'When this session produces something durable, call `save_note` so the next session has it.'
+    'When this session produces something durable, call `save_note` so the next session has it.',
+    '',
+    'Edith also forges skills. If the user asks for a skill, or you notice a procedure they',
+    'repeat, use `propose_skill` - it queues a draft for them to approve in Edith rather than',
+    'writing to disk. Prefer it over any general skill-authoring guidance whenever the skill is',
+    'for Edith or for this user, and do not go looking for where Edith stores things: the tool',
+    'handles that.',
+    '',
+    'Call it immediately rather than interviewing the user first. The queue is the review step -',
+    'they see the draft on a card and forge or discard it - so a reasonable draft now beats a',
+    'perfect one after three questions. If the request is vague, choose sensibly, say what you',
+    'assumed, and let them reject it.',
+    '',
+    'When the user names Edith directly, reach for Edith\'s own tools rather than a generic',
+    'equivalent. That is what they are asking for.'
   ].join('\n');
 }
 

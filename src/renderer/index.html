@@ -119,6 +119,45 @@
         </div>
       </section>
 
+      <section id="forge" class="modal hidden">
+        <div class="forge-stage">
+          <header class="forge-head">
+            <span class="forge-title"><span class="forge-anvil">&#9874;</span> THE FORGE</span>
+            <span class="forge-progress" id="forge-progress"></span>
+            <button class="close" id="forge-close" aria-label="Close">&times;</button>
+          </header>
+
+          <div class="deck" id="deck">
+            <div class="card ghost ghost-2"></div>
+            <div class="card ghost ghost-1"></div>
+            <article class="card live" id="forge-card">
+              <div class="card-kind">PROPOSED SKILL</div>
+              <h3 id="forge-name"></h3>
+              <p class="card-desc" id="forge-desc"></p>
+              <div class="card-why" id="forge-why"></div>
+              <pre class="card-body" id="forge-body"></pre>
+              <div class="card-src" id="forge-src"></div>
+            </article>
+          </div>
+
+          <div class="forge-empty hidden" id="forge-empty">
+            <span class="forge-anvil big">&#9874;</span>
+            <p>Nothing in the forge.</p>
+            <small>Ask Claude to review your memories and propose a skill.</small>
+          </div>
+
+          <footer class="forge-actions" id="forge-actions">
+            <button class="verdict reject" id="forge-reject">
+              <span class="key">&larr;</span> Discard
+            </button>
+            <button class="verdict skip" id="forge-skip">Later</button>
+            <button class="verdict accept" id="forge-accept">
+              Forge <span class="key">&rarr;</span>
+            </button>
+          </footer>
+        </div>
+      </section>
+
       <section id="connection" class="modal hidden">
         <div class="modal-card">
           <h2>Connection</h2>
@@ -165,6 +204,9 @@
           <span class="presence-text" id="presence-text">Edith on standby</span>
         </button>
         <div id="activity-inner"></div>
+        <button class="forge-chip hidden" id="forge-chip" title="Review proposed skills">
+          <span class="forge-anvil">&#9874;</span><span id="forge-count">0</span>
+        </button>
       </footer>
     </div>
     <script type="module" src="./main.ts"></script>

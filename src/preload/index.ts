@@ -17,6 +17,16 @@ const api = {
   updateNote: (id: string, patch: { title?: string; body?: string }) =>
     ipcRenderer.invoke('brain:update-note', id, patch),
   revealVault: () => ipcRenderer.invoke('brain:reveal-vault'),
+
+  forgeList: () => ipcRenderer.invoke('forge:list'),
+  forgeAccept: (id: string) => ipcRenderer.invoke('forge:accept', id),
+  forgeReject: (id: string) => ipcRenderer.invoke('forge:reject', id),
+  forgeUndo: (id: string) => ipcRenderer.invoke('forge:undo', id),
+  onForgeChanged: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('forge:changed', handler);
+    return () => ipcRenderer.off('forge:changed', handler);
+  },
   pickFiles: () => ipcRenderer.invoke('brain:pick-files'),
   importFiles: (files: string[], mode: 'verbatim' | 'distill') =>
     ipcRenderer.invoke('brain:import-files', files, mode),

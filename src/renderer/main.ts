@@ -23,6 +23,16 @@ interface Status {
   lastSessionAt: number | null;
   queue: { total: number; done: number; failed: number; pending: number };
 }
+interface Proposal {
+  id: string;
+  title: string;
+  description: string;
+  body: string;
+  rationale: string;
+  sources: string[];
+  status: 'proposed' | 'accepted' | 'rejected';
+}
+
 type BrainEvent =
   | { type: 'considered'; noteIds: string[]; query: string; at: number }
   | { type: 'opened'; noteIds: string[]; at: number }
@@ -45,9 +55,19 @@ declare global {
       updateSettings(patch: Record<string, unknown>): Promise<Record<string, unknown>>;
       backfill(): Promise<{ queued: number; skipped: number }>;
       reregister(): Promise<unknown>;
+      forgeList(): Promise<{ proposals: Proposal[]; counts: { proposed: number } }>;
+      forgeAccept(id: string): Promise<{ ok: boolean; detail?: string }>;
+      forgeReject(id: string): Promise<{ ok: boolean }>;
+      forgeUndo(id: string): Promise<{ ok: boolean; detail?: string }>;
+      onForgeChanged(cb: () => void): () => void;
       deleteNote(id: string): Promise<boolean>;
       updateNote(id: string, patch: { title?: string; body?: string }): Promise<NoteDto | null>;
       reregister(): Promise<unknown>;
+      forgeList(): Promise<{ proposals: Proposal[]; counts: { proposed: number } }>;
+      forgeAccept(id: string): Promise<{ ok: boolean; detail?: string }>;
+      forgeReject(id: string): Promise<{ ok: boolean }>;
+      forgeUndo(id: string): Promise<{ ok: boolean; detail?: string }>;
+      onForgeChanged(cb: () => void): () => void;
       revealVault(): Promise<void>;
       pickFiles(): Promise<string[]>;
       importFiles(files: string[], mode: 'verbatim' | 'distill'): Promise<{
@@ -679,6 +699,106 @@ $('conn-reregister').addEventListener('click', async () => {
   }
 });
 
+/* ---------------- the forge ---------------- */
+
+let queue: Proposal[] = [];
+let cursor = 0;
+let deciding = false;
+
+function currentProposal(): Proposal | undefined {
+  return queue[cursor];
+}
+
+function paintCard(): void {
+  const p = currentProposal();
+  const hasAny = queue.length > 0 && p;
+
+  $('deck').classList.toggle('hidden', !hasAny);
+  $('forge-actions').classList.toggle('hidden', !hasAny);
+  $('forge-empty').classList.toggle('hidden', Boolean(hasAny));
+  $('forge-progress').textContent = hasAny ? `${cursor + 1} OF ${queue.length}` : '';
+
+  if (!p) return;
+
+  $('forge-name').textContent = p.title;
+  $('forge-desc').textContent = p.description;
+  $('forge-why').textContent = p.rationale;
+  $('forge-body').textContent = p.body;
+  $('forge-src').textContent = p.sources.length
+    ? `drawn from ${p.sources.join(', ')}`
+    : '';
+
+  const card = $('forge-card');
+  card.classList.remove('out-left', 'out-right', 'in');
+  // Reflow so the animation replays for each new card.
+  void card.offsetWidth;
+  card.classList.add('in');
+}
+
+async function loadForge(): Promise<void> {
+  const { proposals, counts } = await window.brain.forgeList();
+  queue = proposals.filter((p) => p.status === 'proposed');
+  if (cursor >= queue.length) cursor = Math.max(0, queue.length - 1);
+
+  const chip = $('forge-chip');
+  chip.classList.toggle('hidden', counts.proposed === 0);
+  $('forge-count').textContent = String(counts.proposed);
+
+  if (!$('forge').classList.contains('hidden')) paintCard();
+}
+
+/** Fly the card out, then resolve the decision. The animation is the feedback. */
+async function decide(verdict: 'accept' | 'reject' | 'skip'): Promise<void> {
+  const p = currentProposal();
+  if (!p || deciding) return;
+  deciding = true;
+
+  const card = $('forge-card');
+  if (verdict !== 'skip') {
+    card.classList.add(verdict === 'accept' ? 'out-right' : 'out-left');
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  try {
+    if (verdict === 'accept') {
+      const r = await window.brain.forgeAccept(p.id);
+      if (!r.ok) {
+        // Put the card back and say why, rather than silently swallowing it.
+        card.classList.remove('out-right');
+        logActivity({
+          type: 'status',
+          message: `Could not forge "${p.title}": ${r.detail ?? 'unknown error'}`,
+          level: 'error',
+          at: Date.now()
+        });
+        return;
+      }
+    } else if (verdict === 'reject') {
+      await window.brain.forgeReject(p.id);
+    } else {
+      cursor = (cursor + 1) % Math.max(1, queue.length);
+    }
+    await loadForge();
+    paintCard();
+  } finally {
+    deciding = false;
+  }
+}
+
+function openForge(): void {
+  cursor = 0;
+  $('forge').classList.remove('hidden');
+  void loadForge().then(paintCard);
+}
+
+$('forge-chip').addEventListener('click', openForge);
+$('forge-close').addEventListener('click', () => $('forge').classList.add('hidden'));
+$('forge-accept').addEventListener('click', () => void decide('accept'));
+$('forge-reject').addEventListener('click', () => void decide('reject'));
+$('forge-skip').addEventListener('click', () => void decide('skip'));
+
+window.brain.onForgeChanged(() => void loadForge());
+
 window.brain.onEvent((e) => {
   if (e.type === 'considered') {
     graph.activate(e.noteIds, 'considered');
@@ -705,6 +825,13 @@ window.brain.onStatus((s) => renderStatus(s));
 window.brain.onVaultChanged(() => void refreshAll());
 
 window.addEventListener('keydown', (e) => {
+  // Scoped to the forge so arrow keys never interfere with the graph.
+  if (!$('forge').classList.contains('hidden')) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); void decide('accept'); return; }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); void decide('reject'); return; }
+    if (e.key === 'ArrowDown')  { e.preventDefault(); void decide('skip'); return; }
+    if (e.key === 'Escape')     { $('forge').classList.add('hidden'); return; }
+  }
   if (e.key === 'Escape' && editing) {
     $('detail-title').textContent = currentTitle;
     setEditing(false);
@@ -720,6 +847,7 @@ window.addEventListener('keydown', (e) => {
     $('connection').classList.add('hidden');
     $('settings').classList.add('hidden');
     $('import').classList.add('hidden');
+    $('forge').classList.add('hidden');
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
     e.preventDefault();
@@ -728,4 +856,5 @@ window.addEventListener('keydown', (e) => {
 });
 
 void refreshAll();
+void loadForge();
 setInterval(() => void refreshGraph(), 20000);
