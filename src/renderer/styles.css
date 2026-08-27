@@ -610,6 +610,8 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 }
 .forge-chip:hover { border-color: rgba(255,255,255,0.28); }
 .forge-anvil { opacity: 0.85; }
+/* No badge when nothing is pending - the chip is then just a way in. */
+#forge-count:empty { display: none; }
 .forge-anvil.big { font-size: 30px; opacity: 0.35; }
 
 @keyframes forge-arrive {

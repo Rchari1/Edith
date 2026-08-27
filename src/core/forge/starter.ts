@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { installProposal } from './install.js';
+import type { Forge } from './forge.js';
 import type { SkillProposal } from './types.js';
 
 /** Records which starter skills have already been offered, so they are offered once. */
@@ -26,11 +27,16 @@ export interface SeedResult {
  * the next launch - that would make the delete button a lie - and a starter
  * skill added in a later version installs on its own without resurrecting
  * anything already removed.
+ *
+ * A skill the user already rejected in the forge is never installed. Someone
+ * who declined a proposal and then found it installed anyway would reasonably
+ * conclude the review step is decorative.
  */
 export async function seedStarterSkills(
   bundledDir: string,
   vaultRoot: string,
-  home = os.homedir()
+  home = os.homedir(),
+  forge?: Forge
 ): Promise<SeedResult> {
   const markerPath = path.join(vaultRoot, MARKER);
   const already = await readMarker(markerPath);
@@ -47,6 +53,13 @@ export async function seedStarterSkills(
     const id = path.basename(file, '.md');
     if (already.includes(id)) {
       result.skipped.push(id);
+      continue;
+    }
+    if (forge?.get(id)?.status === 'rejected') {
+      // Declined in the forge. Record it as handled so it is not reconsidered.
+      result.skipped.push(id);
+      await writeMarker(markerPath, [...already, id]);
+      already.push(id);
       continue;
     }
 

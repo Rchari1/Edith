@@ -730,6 +730,7 @@ function paintCard(): void {
   $('deck-label').classList.toggle('hidden', !hasAny);
   $('forge-actions').classList.toggle('hidden', !hasAny);
   $('forge-empty').classList.toggle('hidden', Boolean(hasAny));
+  $('forge-actions').classList.toggle('hidden', !hasAny);
   $('forge-progress').textContent = hasAny ? `${cursor + 1} OF ${queue.length}` : '';
 
   if (!p) return;
@@ -846,9 +847,21 @@ async function loadForge(): Promise<void> {
   queue = proposals.filter((p) => p.status === 'proposed');
   if (cursor >= queue.length) cursor = Math.max(0, queue.length - 1);
 
+  /*
+   * The chip is the only way into the forge, and the installed-skills panel
+   * lives inside it - so hiding the chip whenever the proposal queue is empty
+   * made that panel unreachable, which is the state every user lands in as
+   * soon as they finish reviewing. It now appears whenever there is anything
+   * to see, and the count badge is only for things still awaiting a decision.
+   */
+  const installedCount = (await window.brain.forgeInstalled()).length;
   const chip = $('forge-chip');
-  chip.classList.toggle('hidden', counts.proposed === 0);
-  $('forge-count').textContent = String(counts.proposed);
+  chip.classList.toggle('hidden', counts.proposed === 0 && installedCount === 0);
+  $('forge-count').textContent = counts.proposed > 0 ? String(counts.proposed) : '';
+  chip.title =
+    counts.proposed > 0
+      ? `${counts.proposed} skill(s) to review`
+      : `${installedCount} installed skill(s)`;
 
   if (!$('forge').classList.contains('hidden')) paintCard();
 }
