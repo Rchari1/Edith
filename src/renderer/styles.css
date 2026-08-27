@@ -1177,47 +1177,30 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
 .section-note { font-size: var(--fs-micro); color: var(--dim); margin-left: auto; }
 .proposed-head { margin-top: 2px; }
 
-.installed { display: flex; flex-direction: column; gap: 8px; }
-.installed-list {
-  display: flex; flex-direction: column; gap: 2px;
-  max-height: 168px; overflow-y: auto;
-}
 
-.installed-row {
-  display: flex; align-items: center; gap: 11px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
+/* Actions ride inside her skill row, revealed on hover, and only for skills
+   Edith installed. A row without them is one the user wrote. */
+.skill-item .row-actions {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--t-snap) var(--ease);
+}
+.skill-item:hover .row-actions,
+.skill-item:focus-within .row-actions { opacity: 1; }
+.skill-item .row-actions button {
+  background: none;
+  border: 1px solid var(--glass-border);
   border-radius: var(--r);
-  transition: background var(--t-snap) var(--ease), border-color var(--t-snap) var(--ease);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 2px 8px;
+  cursor: pointer;
 }
-.installed-row:hover { background: var(--fill-hover); border-color: var(--glass-border); }
-
-/* One dot, one meaning: Edith installed this and Edith can remove it. */
-.installed-row .who {
-  width: 6px; height: 6px; border-radius: 50%;
-  flex: 0 0 6px; background: var(--live);
-}
-.installed-row .meta { flex: 1; min-width: 0; }
-.installed-row .name { font-size: var(--fs-body); color: var(--text); }
-.installed-row .desc {
-  font-size: var(--fs-micro); color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
-}
-.installed-row .origin {
-  font-size: var(--fs-micro); color: var(--dim);
-  text-transform: uppercase; letter-spacing: 0.1em; flex: 0 0 auto;
-}
-.installed-row .row-actions { display: flex; gap: 5px; opacity: 0; transition: opacity var(--t-snap) var(--ease); }
-.installed-row:hover .row-actions { opacity: 1; }
-.installed-row:hover .origin { opacity: 0; }
-.installed-row button {
-  background: none; border: 1px solid var(--glass-border);
-  border-radius: var(--r); color: var(--muted);
-  font: inherit; font-size: var(--fs-micro); padding: 3px 9px; cursor: pointer;
-}
-.installed-row button:hover { color: var(--text); border-color: var(--a-edge); }
-.installed-row button.danger:hover { color: var(--bad); border-color: var(--bad-edge); }
-.installed-empty { font-size: var(--fs-body); color: var(--muted); padding: 12px 2px; text-align: center; }
+.skill-item .row-actions button:hover { color: var(--text); border-color: var(--a-edge); }
+.skill-item .row-actions button.danger:hover { color: var(--bad); border-color: var(--bad-edge); }
 
 .deck { position: relative; height: 320px; }
 .card {

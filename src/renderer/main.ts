@@ -832,7 +832,7 @@ const SHAPE_BLURB: Record<SkillShape, string> = {
 async function recordSkill(): Promise<void> {
   await loadTerritories();
   if (!$('skill-list').classList.contains('hidden')) {
-    renderSkills();
+    void loadInstalled().then(renderSkills);
     void loadForge();
   }
 }
@@ -855,32 +855,47 @@ async function loadSkills(): Promise<void> {
     // discovery is a convenience; the pane still fills from live usage
   }
   if (!$('skill-list').classList.contains('hidden')) {
-    renderSkills();
+    void loadInstalled().then(renderSkills);
     void loadForge();
   }
 }
 
+/** Skills Edith installed, by id - so a row knows whether it can be edited. */
+let edithManaged = new Map<string, InstalledSkill>();
+
+/**
+ * One list, doing both jobs.
+ *
+ * Every skill on disk appears here, whether Edith installed it or the user
+ * wrote it, because a pane called Skills that hides half of them is lying.
+ * Clicking any of them still selects it and lights its territory in the graph.
+ * The ones Edith manages additionally offer edit and delete on hover - the
+ * others deliberately do not, since offering to delete someone's own work from
+ * a list they did not put it in would be a nasty surprise.
+ */
 function renderSkills(): void {
-  // Writes into skill-items, not skill-list: the forge entry is a sibling and
-  // clearing the whole nav would delete it on every repaint.
   const list = $('skill-items');
   list.innerHTML = '';
 
   // Everything declared on disk, plus anything with a territory whose
-  // SKILL.md we could not find.
-  const names = new Set([...skillsDeclared.keys(), ...skillTerritory.keys()]);
+  // SKILL.md we could not find, plus anything Edith has installed.
+  const names = new Set([
+    ...skillsDeclared.keys(),
+    ...skillTerritory.keys(),
+    ...edithManaged.keys()
+  ]);
+
   if (names.size === 0) {
     const empty = document.createElement('div');
     empty.className = 'list-empty';
-    empty.textContent = 'No skills found. Write one at .claude/skills/<name>/SKILL.md.';
+    empty.textContent = 'No skills yet. Ask Claude for one, or write it at .claude/skills/<name>/SKILL.md.';
     list.appendChild(empty);
     return;
   }
 
-  const ordered = [...names].sort((a, b) => a.localeCompare(b));
-
-  for (const name of ordered) {
+  for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
     const def = skillsDeclared.get(name);
+    const managed = edithManaged.get(name);
 
     const item = document.createElement('div');
     item.className = 'skill-item';
@@ -891,6 +906,40 @@ function renderSkills(): void {
     label.textContent = name;
     item.append(label);
 
+    if (managed) {
+      const actions = document.createElement('span');
+      actions.className = 'row-actions';
+
+      const edit = document.createElement('button');
+      edit.textContent = 'Edit';
+      edit.addEventListener('click', (e) => {
+        e.stopPropagation(); // the row itself selects; the button must not
+        openSkillEditor(managed);
+      });
+
+      const del = document.createElement('button');
+      del.className = 'danger';
+      del.textContent = 'Delete';
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`Delete /${name}? Claude will no longer have this skill.`)) return;
+        const r = await window.brain.forgeDeleteInstalled(name);
+        if (!r.ok) {
+          logActivity({
+            type: 'status',
+            message: `Could not delete /${name}: ${r.detail ?? 'unknown error'}`,
+            level: 'error',
+            at: Date.now()
+          });
+        }
+        await loadInstalled();
+        renderSkills();
+      });
+
+      actions.append(edit, del);
+      item.append(actions);
+    }
+
     // Declared skills open their SKILL.md; one we only know by name has no file.
     if (def) {
       item.classList.add('openable');
@@ -900,6 +949,7 @@ function renderSkills(): void {
     list.appendChild(item);
   }
 }
+
 
 type Section = 'add' | 'memories' | 'skills' | 'connection';
 
@@ -1133,75 +1183,7 @@ let editingSkill: InstalledSkill | null = null;
 
 async function loadInstalled(): Promise<void> {
   const skills = await window.brain.forgeInstalled();
-  const list = $('installed-list');
-  list.innerHTML = '';
-  $('installed-count').textContent = skills.length
-    ? `${skills.length} skill${skills.length === 1 ? '' : 's'}`
-    : '';
-
-  if (skills.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'installed-empty';
-    empty.textContent = 'No skills installed yet.';
-    list.appendChild(empty);
-    return;
-  }
-
-  for (const skill of skills) {
-    const row = document.createElement('div');
-    row.className = 'installed-row';
-
-    // One dot, one meaning: Edith installed this and Edith can remove it.
-    const who = document.createElement('span');
-    who.className = 'who';
-    row.appendChild(who);
-
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = `/${skill.id}`;
-    const desc = document.createElement('div');
-    desc.className = 'desc';
-    desc.textContent = skill.description;
-    meta.append(name, desc);
-    row.appendChild(meta);
-
-    // Origin is a detail, so it is a quiet label that yields to the actions on
-    // hover - not a colour difference that reads as one skill being lesser.
-    const origin = document.createElement('span');
-    origin.className = 'origin';
-    origin.textContent = skill.origin === 'starter' ? 'built in' : 'forged';
-    row.appendChild(origin);
-
-    const actions = document.createElement('div');
-    actions.className = 'row-actions';
-
-    const edit = document.createElement('button');
-    edit.textContent = 'Edit';
-    edit.addEventListener('click', () => openSkillEditor(skill));
-
-    const del = document.createElement('button');
-    del.className = 'danger';
-    del.textContent = 'Delete';
-    del.addEventListener('click', async () => {
-      if (!window.confirm(`Delete /${skill.id}? Claude will no longer have this skill.`)) return;
-      const r = await window.brain.forgeDeleteInstalled(skill.id);
-      if (!r.ok) {
-        logActivity({
-          type: 'status',
-          message: `Could not delete /${skill.id}: ${r.detail ?? 'unknown error'}`,
-          level: 'error',
-          at: Date.now()
-        });
-      }
-      await loadInstalled();
-    });
-
-    actions.append(edit, del);
-    row.appendChild(actions);
-    list.appendChild(row);
-  }
+  edithManaged = new Map(skills.map((s) => [s.id, s]));
 }
 
 function openSkillEditor(skill: InstalledSkill): void {
@@ -1242,13 +1224,11 @@ async function loadForge(): Promise<void> {
    * soon as they finish reviewing. It now appears whenever there is anything
    * to see, and the count badge is only for things still awaiting a decision.
    */
-  const installedCount = (await window.brain.forgeInstalled()).length;
+  // Only about proposals now. What is installed is the list underneath, so
+  // announcing a count for it here was the same thing said twice.
   const entry = $('forge-entry');
-  entry.classList.toggle('hidden', counts.proposed === 0 && installedCount === 0);
-  $('forge-entry-text').textContent =
-    counts.proposed > 0
-      ? `${counts.proposed} skill${counts.proposed === 1 ? '' : 's'} proposed`
-      : `${installedCount} installed skill${installedCount === 1 ? '' : 's'}`;
+  entry.classList.toggle('hidden', counts.proposed === 0);
+  $('forge-entry-text').textContent = `${counts.proposed} skill${counts.proposed === 1 ? '' : 's'} proposed by Edith`;
 
   if (!$('forge').classList.contains('hidden')) paintCard();
 }
