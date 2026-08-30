@@ -271,47 +271,63 @@ function describe(c: Vector, vocab: string[], docFreq: number[], total: number, 
 }
 
 /**
+ * Every pairwise similarity, once, as a flat matrix.
+ *
+ * Both the merging and the scoring need the same numbers, and computing them
+ * from sparse vectors on demand was the whole cost of clustering: an earlier
+ * version keyed similarities by a `${a}:${b}` template string, so every pair
+ * comparison allocated a string, and the merge loop compares every pair on
+ * every merge. At 800 notes that took nineteen seconds.
+ */
+function similarityMatrix(docs: Doc[]): Float64Array {
+  const n = docs.length;
+  const m = new Float64Array(n * n);
+  for (let i = 0; i < n; i++) {
+    const di = docs[i];
+    if (!di) continue;
+    for (let j = i + 1; j < n; j++) {
+      const dj = docs[j];
+      if (!dj) continue;
+      const v = cosine(di.vec, dj.vec);
+      m[i * n + j] = v;
+      m[j * n + i] = v;
+    }
+  }
+  return m;
+}
+
+/**
  * Mean silhouette of a partition: is a note more like its own galaxy than the
  * nearest other one?
  *
  * For each note, `a` is its mean similarity to the rest of its own group and
- * `b` its best mean similarity to any other group; the note scores
- * (b - a) inverted into a -1..1 range. Averaged over every note this says
- * whether the split describes the corpus or merely divides it.
+ * `b` its best mean similarity to any other group. Averaged over every note
+ * this says whether the split describes the corpus or merely divides it.
  *
  * Notes alone in a group score zero rather than one - a singleton is not
  * well-clustered, and rewarding it would push the answer toward dust.
  */
-function silhouette(groups: Doc[][], docs: Doc[], at: Map<string, number>): number {
-  if (groups.length < 2) return 0;
+function silhouette(owner: Int32Array, groupCount: number, sim: Float64Array, n: number): number {
+  if (groupCount < 2) return 0;
 
-  // Which group each doc is in, by doc index.
-  const owner = new Int32Array(docs.length).fill(-1);
-  groups.forEach((g, gi) => {
-    for (const d of g) {
-      const i = at.get(d.id);
-      if (i !== undefined) owner[i] = gi;
-    }
-  });
-
+  const sums = new Float64Array(groupCount);
+  const sizes = new Float64Array(groupCount);
   let total = 0;
   let counted = 0;
-  for (let i = 0; i < docs.length; i++) {
-    const mine = owner[i];
-    const di = docs[i];
-    if (mine === undefined || mine < 0 || !di) continue;
 
-    const sums = new Float64Array(groups.length);
-    const sizes = new Float64Array(groups.length);
-    for (let j = 0; j < docs.length; j++) {
+  for (let i = 0; i < n; i++) {
+    const mine = owner[i];
+    if (mine === undefined || mine < 0) continue;
+    sums.fill(0);
+    sizes.fill(0);
+    const row = i * n;
+    for (let j = 0; j < n; j++) {
       if (j === i) continue;
       const theirs = owner[j];
-      const dj = docs[j];
-      if (theirs === undefined || theirs < 0 || !dj) continue;
-      sums[theirs] = (sums[theirs] ?? 0) + cosine(di.vec, dj.vec);
+      if (theirs === undefined || theirs < 0) continue;
+      sums[theirs] = (sums[theirs] ?? 0) + (sim[row + j] ?? 0);
       sizes[theirs] = (sizes[theirs] ?? 0) + 1;
     }
-
     const own = sizes[mine] ?? 0;
     if (own === 0) {
       counted++; // a singleton contributes zero, but still counts
@@ -319,11 +335,12 @@ function silhouette(groups: Doc[][], docs: Doc[], at: Map<string, number>): numb
     }
     const a = (sums[mine] ?? 0) / own;
     let b = -Infinity;
-    for (let g = 0; g < groups.length; g++) {
+    for (let g = 0; g < groupCount; g++) {
       if (g === mine) continue;
-      const n = sizes[g] ?? 0;
-      if (n === 0) continue;
-      b = Math.max(b, (sums[g] ?? 0) / n);
+      const size = sizes[g] ?? 0;
+      if (size === 0) continue;
+      const mean = (sums[g] ?? 0) / size;
+      if (mean > b) b = mean;
     }
     if (b === -Infinity) continue;
     const denom = Math.max(a, b);
@@ -341,111 +358,129 @@ function silhouette(groups: Doc[][], docs: Doc[], at: Map<string, number>): numb
  *
  * The interesting part is where to stop. An absolute cosine cut cannot work,
  * because the right value depends on the vault: 0.045 correctly leaves a
- * single-subject vault as one galaxy, but the same number fails to separate
- * three subjects, and 0.08 shatters the single-subject vault into five
- * arbitrary pieces. The threshold is a property of the corpus, not a constant.
+ * single-subject vault as one galaxy, the same number fails to separate three
+ * subjects, and 0.08 shatters that single-subject vault into five arbitrary
+ * pieces. The threshold is a property of the corpus, not a constant. So merge
+ * all the way down, score every partition passed through, and keep the best.
  *
- * So merge all the way down to one cluster, recording every partition passed
- * through, and keep whichever one scores best. Earlier versions cut once by a
- * merge-height ratio and then recursed into the pieces to make up for what
- * that missed; scoring the partitions directly finds the right answer in one
- * pass, and on a five-subject vault it is both simpler and more accurate.
- *
- * The heights are still recorded as each pair merges. Those heights fall smoothly while genuinely related things
- * are joining, then drop sharply at the moment unrelated subjects are forced
- * together. Cutting at the sharpest drop finds the number of galaxies the
- * vault actually has - and when there is no sharp drop, as in a vault about
- * one subject, it correctly declines to split at all.
+ * Two things keep it affordable. Similarities live in a flat matrix rather
+ * than a map keyed by a built string, and each group remembers its own best
+ * partner, so choosing the next merge scans groups rather than pairs. Only
+ * partitions small enough to be worth scoring are recorded.
  */
 function agglomerate(docs: Doc[], forced: number | undefined, maxGalaxies: number): Doc[][] {
-  const groups = new Map<number, Doc[]>();
-  docs.forEach((d, i) => groups.set(i, [d]));
+  const n = docs.length;
+  if (n === 0) return [];
+  const sim = similarityMatrix(docs);
 
-  const sim = new Map<string, number>();
-  const key = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
-  const ids = [...groups.keys()];
-  for (let i = 0; i < ids.length; i++) {
-    for (let j = i + 1; j < ids.length; j++) {
-      const a = ids[i];
-      const b = ids[j];
-      if (a === undefined || b === undefined) continue;
-      const da = docs[a];
-      const db = docs[b];
-      if (!da || !db) continue;
-      sim.set(key(a, b), cosine(da.vec, db.vec));
-    }
-  }
+  // Group-level average similarity, updated in place as groups merge. A
+  // group's id is the index of the doc it started from.
+  const gsim = Float64Array.from(sim);
+  const members: Doc[][] = docs.map((d) => [d]);
+  const size = new Int32Array(n).fill(1);
+  const alive = new Set<number>();
+  for (let i = 0; i < n; i++) alive.add(i);
 
-  /** Each merge, in order: how alike the pair was, and the state it produced. */
-  const history: Array<{ height: number; snapshot: Doc[][] }> = [];
-
-  for (;;) {
-    let best = forced ?? NOISE_FLOOR;
-    let bi = -1;
+  const bestJ = new Int32Array(n).fill(-1);
+  const bestS = new Float64Array(n).fill(-Infinity);
+  const refreshBest = (i: number): void => {
     let bj = -1;
-    for (const a of groups.keys()) {
-      for (const b of groups.keys()) {
-        if (b <= a) continue;
-        const v = sim.get(key(a, b)) ?? 0;
-        if (v > best) {
-          best = v;
-          bi = a;
-          bj = b;
-        }
+    let bs = -Infinity;
+    const row = i * n;
+    for (const j of alive) {
+      if (j === i) continue;
+      const v = gsim[row + j] ?? 0;
+      if (v > bs) {
+        bs = v;
+        bj = j;
       }
     }
-    if (bi < 0 || bj < 0) break;
+    bestJ[i] = bj;
+    bestS[i] = bj >= 0 ? bs : -Infinity;
+  };
+  for (const i of alive) refreshBest(i);
 
-    const gi = groups.get(bi);
-    const gj = groups.get(bj);
-    if (!gi || !gj) break;
+  const floor = forced ?? NOISE_FLOOR;
+  /** Partitions small enough to be worth scoring, finest first. */
+  const history: Doc[][][] = [];
 
-    // Recompute bi's links as the size-weighted mean of the two - that is what
-    // makes this average-link rather than centroid.
-    for (const other of groups.keys()) {
-      if (other === bi || other === bj) continue;
-      const si = sim.get(key(bi, other)) ?? 0;
-      const sj = sim.get(key(bj, other)) ?? 0;
-      sim.set(key(bi, other), (si * gi.length + sj * gj.length) / (gi.length + gj.length));
+  while (alive.size > 1) {
+    let a = -1;
+    let b = -1;
+    let best = floor;
+    for (const i of alive) {
+      const s = bestS[i] ?? -Infinity;
+      if (s > best) {
+        best = s;
+        a = i;
+        b = bestJ[i] ?? -1;
+      }
     }
-    groups.set(bi, gi.concat(gj));
-    groups.delete(bj);
-    history.push({ height: best, snapshot: [...groups.values()].map((g) => [...g]) });
+    if (a < 0 || b < 0) break;
+
+    // Lance-Williams for average link: the merged group's similarity to every
+    // other is the size-weighted mean of its parents'.
+    const sa = size[a] ?? 1;
+    const sb = size[b] ?? 1;
+    const rowA = a * n;
+    const rowB = b * n;
+    for (const k of alive) {
+      if (k === a || k === b) continue;
+      const v = ((gsim[rowA + k] ?? 0) * sa + (gsim[rowB + k] ?? 0) * sb) / (sa + sb);
+      gsim[rowA + k] = v;
+      gsim[k * n + a] = v;
+    }
+    members[a] = (members[a] ?? []).concat(members[b] ?? []);
+    members[b] = [];
+    size[a] = sa + sb;
+    alive.delete(b);
+
+    refreshBest(a);
+    for (const i of alive) {
+      if (i === a) continue;
+      const bj = bestJ[i];
+      if (bj === a || bj === b) refreshBest(i);
+    }
+
+    if (alive.size <= maxGalaxies) {
+      history.push([...alive].map((i) => members[i] ?? []));
+    }
   }
 
-  // A forced threshold means the caller wanted a specific cut, not the
-  // natural one.
-  if (forced !== undefined) return [...groups.values()];
+  const current = (): Doc[][] => [...alive].map((i) => members[i] ?? []);
+  if (forced !== undefined) return current();
 
-  // Score every partition the merging passed through and keep the best one.
-  // History runs from many clusters to few, so walking it in order considers
-  // the finest partitions first and a coarser one must clear the margin.
-  const at = new Map(docs.map((d, i) => [d.id, i]));
+  // Score each recorded partition. History runs from many clusters to few, so
+  // the finest are considered first and a coarser one must clear the margin.
+  const index = new Map(docs.map((d, i) => [d.id, i]));
   let cut: Doc[][] | undefined;
-  let best = MIN_SILHOUETTE;
-  for (const h of history) {
-    const count = h.snapshot.length;
-    if (count < 2 || count > maxGalaxies) continue;
-    const score = silhouette(h.snapshot, docs, at);
-    const bar = cut ? best + MERGE_MARGIN : best;
+  let bestScore = MIN_SILHOUETTE;
+  for (const snapshot of history) {
+    if (snapshot.length < 2) continue;
+    const owner = new Int32Array(n).fill(-1);
+    snapshot.forEach((g, gi) => {
+      for (const d of g) {
+        const at = index.get(d.id);
+        if (at !== undefined) owner[at] = gi;
+      }
+    });
+    const score = silhouette(owner, snapshot.length, sim, n);
+    const bar = cut ? bestScore + MERGE_MARGIN : bestScore;
     if (score > bar) {
-      best = score;
-      cut = h.snapshot;
+      bestScore = score;
+      cut = snapshot;
     }
   }
   if (cut) return cut;
 
   // Nothing scored well enough to be worth splitting: one galaxy. Merging
   // stops once pairs are merely noise-similar, so the end state can still hold
-  // more clusters than a screen should show - fall back to the last partition
-  // that was within budget.
-  const final = [...groups.values()];
+  // more clusters than a screen should show - fall back to the coarsest
+  // partition recorded.
+  const final = current();
   if (final.length <= maxGalaxies) return final;
-  for (let i = history.length - 1; i >= 0; i--) {
-    const h = history[i];
-    if (h && h.snapshot.length <= maxGalaxies) return h.snapshot;
-  }
-  return final;
+  const last = history[history.length - 1];
+  return last ?? final;
 }
 
 /**

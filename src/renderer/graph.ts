@@ -273,6 +273,8 @@ export class BrainGraph {
   /** One basin per galaxy. Empty means a single, centred object, as before. */
   private basins: Basin[] = [];
   private coreSprite?: HTMLCanvasElement;
+  /** Scale for notes belonging to no galaxy. 1 while the object is single. */
+  private fieldScale = 1;
   private basinOf = new Map<string, number>();
   private dust: Dust[] = [];
 
@@ -414,6 +416,7 @@ export class BrainGraph {
 
     if (galaxies.length < 2) {
       this.basins = [];
+      this.fieldScale = 1;
       for (const b of this.bodies.values()) b.basin = -1;
       for (const d of this.dust) d.basin = -1;
       return;
@@ -423,6 +426,7 @@ export class BrainGraph {
     // rather than sprawling off the edges of the stage.
     const n = galaxies.length;
     const shrink = 1 / Math.sqrt(n);
+    this.fieldScale = shrink;
     // Spread over a sphere, neighbours are already far apart - nearest-
     // neighbour distance falls as sqrt(n) while the basins shrink at the same
     // rate, so the gap between them holds without the radius growing at all.
@@ -444,7 +448,9 @@ export class BrainGraph {
       const r = radius;
       // Sizeable galaxies get a slightly larger basin, but the range is
       // deliberately narrow - a galaxy of forty should not dwarf one of five.
-      const largest = Math.max(galaxies[0]?.noteIds.length ?? 1, 1);
+      // Taken across all of them rather than from the first: this does not
+      // need to know that the clusterer happens to return them sorted.
+      const largest = Math.max(1, ...galaxies.map((x) => x.noteIds.length));
       const weight = 0.82 + 0.36 * (g.noteIds.length / largest);
       for (const id of g.noteIds) this.basinOf.set(id, i);
       return {
@@ -1030,7 +1036,10 @@ export class BrainGraph {
    */
   private toWorld(sx: number, sy: number, sz: number, basin: number): { x: number; y: number; z: number } {
     const b = basin >= 0 ? this.basins[basin] : undefined;
-    const k = b ? b.scale * SCALE : SCALE;
+    // A note in no galaxy still has to be drawn at a galaxy's scale. Left at
+    // the full SCALE it would sprawl across the whole stage at twice the size
+    // of any basin, on top of all of them.
+    const k = (b ? b.scale : this.fieldScale) * SCALE;
     const v0 = (sz - Z_MID) * k;
     const d0 = sy * k;
     return {

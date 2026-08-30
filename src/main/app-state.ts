@@ -499,12 +499,25 @@ export class AppState extends EventEmitter {
    */
   /** Last run's galaxies, so identity survives the next one. */
   private lastGalaxies: Galaxy[] = [];
+  /** What the vault looked like when those galaxies were computed. */
+  private galaxyStamp = '';
 
   graph(): Graph & { galaxies: Array<{ id: string; noteIds: string[] }> } {
     const g = this.vault.graph();
-    const { galaxies } = clusterNotes(this.vault.list(), { previous: this.lastGalaxies });
-    this.lastGalaxies = galaxies;
-    return { ...g, galaxies: galaxies.map((x) => ({ id: x.id, noteIds: x.noteIds })) };
+    const notes = this.vault.list();
+
+    // The renderer polls this every twenty seconds whether or not anything
+    // changed, and clustering is the expensive part. Recompute only when the
+    // vault has actually moved - a different set of notes, or one of them
+    // edited since last time.
+    let stamp = `${notes.length}`;
+    for (const n of notes) stamp += `|${n.frontmatter.id}@${n.frontmatter.updated}`;
+    if (stamp !== this.galaxyStamp) {
+      this.lastGalaxies = clusterNotes(notes, { previous: this.lastGalaxies }).galaxies;
+      this.galaxyStamp = stamp;
+    }
+
+    return { ...g, galaxies: this.lastGalaxies.map((x) => ({ id: x.id, noteIds: x.noteIds })) };
   }
 
   status(): BrainStatus {
