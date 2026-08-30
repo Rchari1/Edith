@@ -362,6 +362,55 @@ function agglomerate(docs: Doc[], forced: number | undefined, maxGalaxies: numbe
 }
 
 /**
+ * Split, then split again inside what comes out.
+ *
+ * One cut is not enough. A real vault is lopsided - a large body of work on
+ * one thing, and a few smaller pockets of something else - and a single cut
+ * peels off the most distinct pocket while leaving the bulk in one piece.
+ * Measured on 207 chunks of real sessions, one cut gave 197 and 10.
+ *
+ * Recursing fixes more than the count. Re-vectorising a subgroup on its own
+ * recomputes IDF against that subgroup, so terms that were unremarkable across
+ * the whole vault - every note mentioning them - become distinguishing inside
+ * it. Structure the global view flattens is visible one level down.
+ */
+const MAX_DEPTH = 4;
+
+function partition(notes: Note[], docs: Doc[], budget: number, minSize: number, depth = 0): Doc[][] {
+  if (depth >= MAX_DEPTH || budget <= 1 || docs.length < minSize * 2) return [docs];
+
+  const cut = agglomerate(docs, undefined, budget);
+  if (cut.length <= 1) return [docs];
+
+  // Re-vectorise each piece against itself, then look for structure inside it.
+  const byId = new Map(notes.map((n) => [n.frontmatter.id, n]));
+  const out: Doc[][] = [];
+  let left = budget;
+  for (const group of cut) {
+    const share = Math.max(1, Math.floor(left / Math.max(cut.length - out.length, 1)));
+    if (group.length < minSize * 2 || share <= 1) {
+      out.push(group);
+      left -= 1;
+      continue;
+    }
+    const subNotes = group
+      .map((d) => byId.get(d.id))
+      .filter((n): n is Note => n !== undefined);
+    const { docs: subDocs } = vectorise(subNotes);
+    const pieces = partition(subNotes, subDocs, share, minSize, depth + 1);
+    // The recursion works on vectors built from the subgroup; map back to the
+    // parent's vectors so every level speaks the same coordinates.
+    const parentById = new Map(group.map((d) => [d.id, d]));
+    for (const piece of pieces) {
+      const mapped = piece.map((d) => parentById.get(d.id)).filter((d): d is Doc => d !== undefined);
+      if (mapped.length) out.push(mapped);
+    }
+    left -= pieces.length;
+  }
+  return out;
+}
+
+/**
  * Carry galaxy identity across a recompute.
  *
  * Position is about to become a function of the whole corpus rather than a
@@ -422,7 +471,10 @@ export function clusterNotes(notes: Note[], options: ClusterOptions = {}): Clust
 
   const { docs, vocab, docFreq } = vectorise(notes);
   const byId = new Map(docs.map((d) => [d.id, d]));
-  const groups = agglomerate(docs, options.threshold, maxGalaxies);
+  const groups =
+    options.threshold === undefined
+      ? partition(notes, docs, maxGalaxies, minSize)
+      : agglomerate(docs, options.threshold, maxGalaxies);
 
   const fresh: Array<{ members: Doc[]; centroid: Vector; terms: string[] }> = [];
   const field: string[] = [];
