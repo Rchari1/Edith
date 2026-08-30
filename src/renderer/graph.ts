@@ -144,19 +144,34 @@ interface Basin {
 }
 
 /**
- * How far the basins sit from the centre, relative to one basin's radius.
+ * Half the gap wanted between neighbouring basins, in basin-scale units.
  *
- * The attractor spans roughly 1.5 units either side of its own centre, so at
- * anything under about 2.5 two basins touch and read as one wide cloud rather
- * than as two objects. This leaves a clear lane between them.
+ * This is not the ring radius. The radius has to be derived from it, because
+ * the ring must grow as basins are added: N basins spaced around a circle sit
+ * 2R*sin(pi/N) apart, so holding that separation constant means
+ * R = SPREAD * shrink / sin(pi/N). Scaling the radius by `shrink` alone - as
+ * an earlier version did - moves the basins *closer* as they multiply, and at
+ * five subjects they collapse into a single wide cloud.
  */
 const BASIN_SPREAD = 3.1;
 
+/** Depth of the spread, as a fraction of its width. */
+const BASIN_DEPTH = 0.62;
+
 /**
- * Distance between the ring of basins and the viewer, as a fraction of the
- * spread. A little depth stops the ring reading as a flat carousel.
+ * How much the vertical axis is squashed.
+ *
+ * Unflattened, the basins sit on a ball and the top and bottom ones drift out
+ * of frame on a wide window. Flattened, they read as a drift across the stage
+ * that still has depth in it.
  */
-const BASIN_DEPTH = 0.34;
+const BASIN_FLATTEN = 0.42;
+
+/** Tuned so the whole spread sits inside the stage at up to eight galaxies. */
+const SPHERE_FIT = 0.6;
+
+/** 2*pi/phi^2 - the angle that never repeats a direction. */
+const GOLDEN_ANGLE = 2.399963229728653;
 
 /** Core diameter, as a multiple of a basin's own radius. */
 const CORE_SIZE = 3.4;
@@ -406,20 +421,37 @@ export class BrainGraph {
 
     // Basins shrink as they multiply, so the whole object keeps its footprint
     // rather than sprawling off the edges of the stage.
-    const shrink = 1 / Math.sqrt(galaxies.length);
-    const radius = BASIN_SPREAD * shrink;
+    const n = galaxies.length;
+    const shrink = 1 / Math.sqrt(n);
+    // Spread over a sphere, neighbours are already far apart - nearest-
+    // neighbour distance falls as sqrt(n) while the basins shrink at the same
+    // rate, so the gap between them holds without the radius growing at all.
+    // A ring needed 1/sin(pi/n) here; carrying that over to the sphere pushed
+    // the outer basins off the stage.
+    const radius = BASIN_SPREAD * SPHERE_FIT;
 
     this.basins = galaxies.map((g, i) => {
-      const angle = (i / galaxies.length) * TWO_PI;
+      // Points on a sphere by the golden angle, not around a circle.
+      //
+      // A ring has a bad viewing angle by construction: orbit to its edge and
+      // the basins line up and overlap, which is exactly what the camera does
+      // on its own. Spread over a sphere there is no angle that collapses
+      // them. The vertical axis is flattened so the result still reads as a
+      // drift of objects rather than a ball.
+      const y = n === 1 ? 0 : 1 - (2 * i) / (n - 1);
+      const ring = Math.sqrt(Math.max(0, 1 - y * y));
+      const theta = i * GOLDEN_ANGLE;
+      const r = radius;
       // Sizeable galaxies get a slightly larger basin, but the range is
       // deliberately narrow - a galaxy of forty should not dwarf one of five.
-      const weight = 0.82 + 0.36 * (g.noteIds.length / Math.max(galaxies[0]?.noteIds.length ?? 1, 1));
+      const largest = Math.max(galaxies[0]?.noteIds.length ?? 1, 1);
+      const weight = 0.82 + 0.36 * (g.noteIds.length / largest);
       for (const id of g.noteIds) this.basinOf.set(id, i);
       return {
         id: g.id,
-        ox: Math.cos(angle) * radius,
-        oy: 0,
-        oz: Math.sin(angle) * radius * BASIN_DEPTH,
+        ox: Math.cos(theta) * ring * r,
+        oy: y * r * BASIN_FLATTEN,
+        oz: Math.sin(theta) * ring * r * BASIN_DEPTH,
         scale: shrink * weight
       };
     });

@@ -68,15 +68,34 @@ export interface ClusterResult {
 const DEFAULTS = { minSize: 3, maxGalaxies: 8 };
 
 /**
- * How much sharper a drop has to be than the merges around it to count as the
- * boundary between galaxies rather than ordinary variation.
+ * How well separated a split has to be before it is worth making.
  *
- * Measured: a vault covering several subjects shows within-topic similarity
- * near 0.08 against 0.02 between them, so the real boundary stands out by
- * roughly 4x. A vault covering one subject declines smoothly with no such
- * step, and should stay a single galaxy. 2x sits between those cases.
+ * This is a mean silhouette: for each note, how much closer it sits to its own
+ * galaxy than to the nearest other one, from -1 to 1. Zero means the split
+ * tells you nothing.
+ *
+ * An earlier version looked for a sharp fall in merge heights instead, and it
+ * did not survive contact with a real vault. Five plainly distinct subjects
+ * separate at a height ratio of only about 1.4x - the cliff a synthetic
+ * corpus shows simply is not there - so a factor test either missed real
+ * boundaries or invented them, depending on where the constant was put.
+ * Scoring the partition asks the question directly.
  */
-const SPLIT_FACTOR = 2;
+const MIN_SILHOUETTE = 0.035;
+
+/**
+ * How much better a coarser split has to score before it is preferred.
+ *
+ * TF-IDF vectors are sparse enough that unrelated notes score almost exactly
+ * zero against each other. That makes the silhouette saturate: with the
+ * nearest other galaxy at ~0, nearly any partition scores near 1, and picking
+ * the maximum is picking noise. It showed up as two unrelated subjects merging
+ * into one galaxy that scored a hair above keeping them apart.
+ *
+ * So finer partitions are preferred, and a coarser one has to win by a margin
+ * rather than by a rounding error. Merging is the claim that needs evidence.
+ */
+const MERGE_MARGIN = 0.02;
 
 /** Below this, a merge is noise rather than a similarity worth acting on. */
 const NOISE_FLOOR = 0.01;
@@ -252,6 +271,69 @@ function describe(c: Vector, vocab: string[], docFreq: number[], total: number, 
 }
 
 /**
+ * Mean silhouette of a partition: is a note more like its own galaxy than the
+ * nearest other one?
+ *
+ * For each note, `a` is its mean similarity to the rest of its own group and
+ * `b` its best mean similarity to any other group; the note scores
+ * (b - a) inverted into a -1..1 range. Averaged over every note this says
+ * whether the split describes the corpus or merely divides it.
+ *
+ * Notes alone in a group score zero rather than one - a singleton is not
+ * well-clustered, and rewarding it would push the answer toward dust.
+ */
+function silhouette(groups: Doc[][], docs: Doc[], at: Map<string, number>): number {
+  if (groups.length < 2) return 0;
+
+  // Which group each doc is in, by doc index.
+  const owner = new Int32Array(docs.length).fill(-1);
+  groups.forEach((g, gi) => {
+    for (const d of g) {
+      const i = at.get(d.id);
+      if (i !== undefined) owner[i] = gi;
+    }
+  });
+
+  let total = 0;
+  let counted = 0;
+  for (let i = 0; i < docs.length; i++) {
+    const mine = owner[i];
+    const di = docs[i];
+    if (mine === undefined || mine < 0 || !di) continue;
+
+    const sums = new Float64Array(groups.length);
+    const sizes = new Float64Array(groups.length);
+    for (let j = 0; j < docs.length; j++) {
+      if (j === i) continue;
+      const theirs = owner[j];
+      const dj = docs[j];
+      if (theirs === undefined || theirs < 0 || !dj) continue;
+      sums[theirs] = (sums[theirs] ?? 0) + cosine(di.vec, dj.vec);
+      sizes[theirs] = (sizes[theirs] ?? 0) + 1;
+    }
+
+    const own = sizes[mine] ?? 0;
+    if (own === 0) {
+      counted++; // a singleton contributes zero, but still counts
+      continue;
+    }
+    const a = (sums[mine] ?? 0) / own;
+    let b = -Infinity;
+    for (let g = 0; g < groups.length; g++) {
+      if (g === mine) continue;
+      const n = sizes[g] ?? 0;
+      if (n === 0) continue;
+      b = Math.max(b, (sums[g] ?? 0) / n);
+    }
+    if (b === -Infinity) continue;
+    const denom = Math.max(a, b);
+    total += denom > 0 ? (a - b) / denom : 0;
+    counted++;
+  }
+  return counted ? total / counted : 0;
+}
+
+/**
  * Average-link agglomerative clustering, cut where the corpus says to cut.
  *
  * Average link rather than single link because single link chains: one note
@@ -263,8 +345,13 @@ function describe(c: Vector, vocab: string[], docFreq: number[], total: number, 
  * three subjects, and 0.08 shatters the single-subject vault into five
  * arbitrary pieces. The threshold is a property of the corpus, not a constant.
  *
- * So merge all the way down to one cluster, recording how alike each pair was
- * when it merged. Those heights fall smoothly while genuinely related things
+ * So merge all the way down to one cluster, recording every partition passed
+ * through, and keep whichever one scores best. Earlier versions cut once by a
+ * merge-height ratio and then recursed into the pieces to make up for what
+ * that missed; scoring the partitions directly finds the right answer in one
+ * pass, and on a five-subject vault it is both simpler and more accurate.
+ *
+ * The heights are still recorded as each pair merges. Those heights fall smoothly while genuinely related things
  * are joining, then drop sharply at the moment unrelated subjects are forced
  * together. Cutting at the sharpest drop finds the number of galaxies the
  * vault actually has - and when there is no sharp drop, as in a vault about
@@ -330,28 +417,28 @@ function agglomerate(docs: Doc[], forced: number | undefined, maxGalaxies: numbe
   // natural one.
   if (forced !== undefined) return [...groups.values()];
 
-  // Walk the merge heights looking for the sharpest fall, among cuts that
-  // leave a plausible number of galaxies. Merging the last few clusters always
-  // looks dramatic and never means anything.
+  // Score every partition the merging passed through and keep the best one.
+  // History runs from many clusters to few, so walking it in order considers
+  // the finest partitions first and a coarser one must clear the margin.
+  const at = new Map(docs.map((d, i) => [d.id, i]));
   let cut: Doc[][] | undefined;
-  let sharpest = SPLIT_FACTOR;
-  for (let i = 1; i < history.length; i++) {
-    const before = history[i - 1];
-    const after = history[i];
-    if (!before || !after) continue;
-    const count = before.snapshot.length;
+  let best = MIN_SILHOUETTE;
+  for (const h of history) {
+    const count = h.snapshot.length;
     if (count < 2 || count > maxGalaxies) continue;
-    const ratio = before.height / Math.max(after.height, 1e-9);
-    if (ratio > sharpest) {
-      sharpest = ratio;
-      cut = before.snapshot;
+    const score = silhouette(h.snapshot, docs, at);
+    const bar = cut ? best + MERGE_MARGIN : best;
+    if (score > bar) {
+      best = score;
+      cut = h.snapshot;
     }
   }
   if (cut) return cut;
 
-  // No natural boundary. Merging stops once pairs are merely noise-similar, so
-  // the end state can still hold more clusters than a screen should show -
-  // in that case fall back to the last cut that was within budget.
+  // Nothing scored well enough to be worth splitting: one galaxy. Merging
+  // stops once pairs are merely noise-similar, so the end state can still hold
+  // more clusters than a screen should show - fall back to the last partition
+  // that was within budget.
   const final = [...groups.values()];
   if (final.length <= maxGalaxies) return final;
   for (let i = history.length - 1; i >= 0; i--) {
@@ -359,55 +446,6 @@ function agglomerate(docs: Doc[], forced: number | undefined, maxGalaxies: numbe
     if (h && h.snapshot.length <= maxGalaxies) return h.snapshot;
   }
   return final;
-}
-
-/**
- * Split, then split again inside what comes out.
- *
- * One cut is not enough. A real vault is lopsided - a large body of work on
- * one thing, and a few smaller pockets of something else - and a single cut
- * peels off the most distinct pocket while leaving the bulk in one piece.
- * Measured on 207 chunks of real sessions, one cut gave 197 and 10.
- *
- * Recursing fixes more than the count. Re-vectorising a subgroup on its own
- * recomputes IDF against that subgroup, so terms that were unremarkable across
- * the whole vault - every note mentioning them - become distinguishing inside
- * it. Structure the global view flattens is visible one level down.
- */
-const MAX_DEPTH = 4;
-
-function partition(notes: Note[], docs: Doc[], budget: number, minSize: number, depth = 0): Doc[][] {
-  if (depth >= MAX_DEPTH || budget <= 1 || docs.length < minSize * 2) return [docs];
-
-  const cut = agglomerate(docs, undefined, budget);
-  if (cut.length <= 1) return [docs];
-
-  // Re-vectorise each piece against itself, then look for structure inside it.
-  const byId = new Map(notes.map((n) => [n.frontmatter.id, n]));
-  const out: Doc[][] = [];
-  let left = budget;
-  for (const group of cut) {
-    const share = Math.max(1, Math.floor(left / Math.max(cut.length - out.length, 1)));
-    if (group.length < minSize * 2 || share <= 1) {
-      out.push(group);
-      left -= 1;
-      continue;
-    }
-    const subNotes = group
-      .map((d) => byId.get(d.id))
-      .filter((n): n is Note => n !== undefined);
-    const { docs: subDocs } = vectorise(subNotes);
-    const pieces = partition(subNotes, subDocs, share, minSize, depth + 1);
-    // The recursion works on vectors built from the subgroup; map back to the
-    // parent's vectors so every level speaks the same coordinates.
-    const parentById = new Map(group.map((d) => [d.id, d]));
-    for (const piece of pieces) {
-      const mapped = piece.map((d) => parentById.get(d.id)).filter((d): d is Doc => d !== undefined);
-      if (mapped.length) out.push(mapped);
-    }
-    left -= pieces.length;
-  }
-  return out;
 }
 
 /**
@@ -471,10 +509,7 @@ export function clusterNotes(notes: Note[], options: ClusterOptions = {}): Clust
 
   const { docs, vocab, docFreq } = vectorise(notes);
   const byId = new Map(docs.map((d) => [d.id, d]));
-  const groups =
-    options.threshold === undefined
-      ? partition(notes, docs, maxGalaxies, minSize)
-      : agglomerate(docs, options.threshold, maxGalaxies);
+  const groups = agglomerate(docs, options.threshold, maxGalaxies);
 
   const fresh: Array<{ members: Doc[]; centroid: Vector; terms: string[] }> = [];
   const field: string[] = [];
