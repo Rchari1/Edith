@@ -21,9 +21,16 @@ import { registerSessionHook, type HookResult } from '../core/onboarding/hooks.j
 import { installSkill } from '../core/onboarding/skill.js';
 import { importFiles, importText, type ImportSummary } from '../core/importer/index.js';
 import fs from 'node:fs/promises';
-import { loadSettings, saveSettings, resolveApiKey, type Settings } from './settings.js';
+import {
+  loadSettings,
+  saveSettings,
+  mergeSettings,
+  resolveApiKey,
+  type Settings
+} from './settings.js';
 import type { BrainEvent, Session } from '../core/types.js';
 import type { Graph } from '../core/vault/vault.js';
+import { clusterNotes, type Galaxy } from '../core/cluster/index.js';
 
 export interface BrainStatus {
   serverUrl: string | null;
@@ -482,14 +489,42 @@ export class AppState extends EventEmitter {
       ('model' in patch && patch.model !== this.settings.model) ||
       ('minTurns' in patch && patch.minTurns !== this.settings.minTurns);
 
-    this.settings = { ...this.settings, ...patch };
+    // The patch comes over IPC, so it is not necessarily the shape it claims.
+    this.settings = mergeSettings(this.settings, patch as Record<string, unknown>);
     await saveSettings(this.settingsFile, this.settings);
     if (needsQueueRebuild) this.buildQueue();
     return this.settings;
   }
 
-  graph(): Graph {
-    return this.vault.graph();
+  /**
+   * The graph, plus which galaxy each note belongs to.
+   *
+   * Clustering lives here rather than in the vault: the vault's job is notes
+   * on disk, and it should not know that anything groups them. Passing the
+   * previous run back in is what keeps a galaxy's identity stable as the vault
+   * grows, so a basin does not jump on screen when a note is added.
+   */
+  /** Last run's galaxies, so identity survives the next one. */
+  private lastGalaxies: Galaxy[] = [];
+  /** What the vault looked like when those galaxies were computed. */
+  private galaxyStamp = '';
+
+  graph(): Graph & { galaxies: Array<{ id: string; noteIds: string[] }> } {
+    const g = this.vault.graph();
+    const notes = this.vault.list();
+
+    // The renderer polls this every twenty seconds whether or not anything
+    // changed, and clustering is the expensive part. Recompute only when the
+    // vault has actually moved - a different set of notes, or one of them
+    // edited since last time.
+    let stamp = `${notes.length}`;
+    for (const n of notes) stamp += `|${n.frontmatter.id}@${n.frontmatter.updated}`;
+    if (stamp !== this.galaxyStamp) {
+      this.lastGalaxies = clusterNotes(notes, { previous: this.lastGalaxies }).galaxies;
+      this.galaxyStamp = stamp;
+    }
+
+    return { ...g, galaxies: this.lastGalaxies.map((x) => ({ id: x.id, noteIds: x.noteIds })) };
   }
 
   status(): BrainStatus {

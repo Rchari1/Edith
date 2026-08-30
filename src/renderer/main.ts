@@ -76,7 +76,11 @@ declare global {
   interface Window {
     brain: {
       status(): Promise<Status>;
-      graph(): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }>;
+      graph(): Promise<{
+        nodes: GraphNodeData[];
+        edges: GraphEdgeData[];
+        galaxies: Array<{ id: string; noteIds: string[] }>;
+      }>;
       settings(): Promise<Record<string, unknown>>;
       recentEvents(): Promise<BrainEvent[]>;
       skills(): Promise<SkillDef[]>;
@@ -135,6 +139,8 @@ let allNotes: NoteDto[] = [];
 let selectedId: string | null = null;
 /** Non-null when the detail panel is showing a SKILL.md rather than a note. */
 let selectedSkill: string | null = null;
+/** The open skill, when it is one Edith installed and so may remove. */
+let selectedManagedSkill: InstalledSkill | null = null;
 
 /* ---------------- rendering helpers ---------------- */
 
@@ -307,6 +313,7 @@ async function selectSkill(name: string): Promise<void> {
   if (!skill) return;
 
   selectedSkill = name;
+  selectedManagedSkill = edithManaged.get(name) ?? null;
   selectedId = null;
   graph.selected = null;
 
@@ -354,14 +361,17 @@ async function selectSkill(name: string): Promise<void> {
   currentTitle = skill.name;
   if (editing) setEditing(false);
   $('detail-body').innerHTML = renderMarkdown(skill.content);
-  // A skill's file is Claude's, not the vault's - Edith will not delete it.
-  $('btn-delete').classList.add('hidden');
+  // Edith offers to delete only what Edith installed. Removing a skill someone
+  // wrote themselves, from a list they did not put it in, would be a nasty
+  // surprise - so for those the control is simply absent.
+  $('btn-delete').classList.toggle('hidden', !selectedManagedSkill);
   $('detail').classList.remove('hidden');
   renderSkills();
 }
 
 function closeDetail(): void {
   selectedSkill = null;
+  selectedManagedSkill = null;
   $('btn-delete').classList.remove('hidden');
   $('detail').classList.add('hidden');
   selectedId = null;
@@ -511,6 +521,9 @@ function logActivity(e: BrainEvent): void {
 async function refreshGraph(): Promise<void> {
   const g = await window.brain.graph();
   graph.setData(g.nodes, g.edges);
+  // Basins are assigned after the bodies exist, so every note has something
+  // to be assigned to.
+  graph.setGalaxies(g.galaxies);
   renderCatLegend();
   $('empty').classList.toggle('hidden', g.nodes.length > 0);
   await hydrateSkills();
@@ -605,6 +618,24 @@ $('btn-open-file').addEventListener('click', () => {
 });
 
 $('btn-delete').addEventListener('click', async () => {
+  const skill = selectedManagedSkill;
+  if (skill) {
+    if (!window.confirm(`Delete /${skill.id}? Claude will no longer have this skill.`)) return;
+    const r = await window.brain.forgeDeleteInstalled(skill.id);
+    if (!r.ok) {
+      logActivity({
+        type: 'status',
+        message: `Could not delete /${skill.id}: ${r.detail ?? 'unknown error'}`,
+        level: 'error',
+        at: Date.now()
+      });
+      return;
+    }
+    closeDetail();
+    await loadInstalled();
+    renderSkills();
+    return;
+  }
   if (!selectedId) return;
   if (!window.confirm(`Delete "${selectedId}"? The markdown file is removed from disk.`)) return;
   await window.brain.deleteNote(selectedId);
@@ -870,10 +901,12 @@ let edithManaged = new Map<string, InstalledSkill>();
  *
  * Every skill on disk appears here, whether Edith installed it or the user
  * wrote it, because a pane called Skills that hides half of them is lying.
- * Clicking any of them still selects it and lights its territory in the graph.
- * The ones Edith manages additionally offer edit and delete on hover - the
- * others deliberately do not, since offering to delete someone's own work from
- * a list they did not put it in would be a nasty surprise.
+ * Clicking one selects it and lights its territory in the graph.
+ *
+ * The rows carry no controls. Edit and delete used to sit on the row itself,
+ * which made the rows Edith manages taller than the rest and left the list
+ * visibly uneven; they belong with the skill once it is open, where there is
+ * room for them and it is clear what they act on.
  */
 function renderSkills(): void {
   const list = $('skill-items');
@@ -900,7 +933,6 @@ function renderSkills(): void {
 
   for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
     const def = skillsDeclared.get(name);
-    const managed = edithManaged.get(name);
 
     const item = document.createElement('div');
     item.className = 'skill-item';
@@ -910,40 +942,6 @@ function renderSkills(): void {
     label.className = 'n';
     label.textContent = name;
     item.append(label);
-
-    if (managed) {
-      const actions = document.createElement('span');
-      actions.className = 'row-actions';
-
-      const edit = document.createElement('button');
-      edit.textContent = 'Edit';
-      edit.addEventListener('click', (e) => {
-        e.stopPropagation(); // the row itself selects; the button must not
-        openSkillEditor(managed);
-      });
-
-      const del = document.createElement('button');
-      del.className = 'danger';
-      del.textContent = 'Delete';
-      del.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!window.confirm(`Delete /${name}? Claude will no longer have this skill.`)) return;
-        const r = await window.brain.forgeDeleteInstalled(name);
-        if (!r.ok) {
-          logActivity({
-            type: 'status',
-            message: `Could not delete /${name}: ${r.detail ?? 'unknown error'}`,
-            level: 'error',
-            at: Date.now()
-          });
-        }
-        await loadInstalled();
-        renderSkills();
-      });
-
-      actions.append(edit, del);
-      item.append(actions);
-    }
 
     // Declared skills open their SKILL.md; one we only know by name has no file.
     if (def) {
@@ -1450,6 +1448,27 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-void refreshAll();
-void loadForge();
+/**
+ * The window opens before the main process has finished starting - the vault
+ * has to be opened and the server brought up first, and only then are the IPC
+ * handlers registered. So the first load can arrive before there is anything
+ * to answer it, and the whole refresh rejects on the first call.
+ *
+ * Retry rather than reorder: showing the window immediately is the right
+ * behaviour, and a few hundred milliseconds of patience here costs nothing.
+ */
+async function firstLoad(): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      await refreshAll();
+      await loadForge();
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  // Out of patience: let the next vault change or the poll below try again.
+}
+
+void firstLoad();
 setInterval(() => void refreshGraph(), 20000);
