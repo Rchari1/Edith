@@ -21,7 +21,13 @@ import { registerSessionHook, type HookResult } from '../core/onboarding/hooks.j
 import { installSkill } from '../core/onboarding/skill.js';
 import { importFiles, importText, type ImportSummary } from '../core/importer/index.js';
 import fs from 'node:fs/promises';
-import { loadSettings, saveSettings, resolveApiKey, type Settings } from './settings.js';
+import {
+  loadSettings,
+  saveSettings,
+  mergeSettings,
+  resolveApiKey,
+  type Settings
+} from './settings.js';
 import type { BrainEvent, Session } from '../core/types.js';
 import type { Graph } from '../core/vault/vault.js';
 import { clusterNotes, type Galaxy } from '../core/cluster/index.js';
@@ -483,7 +489,8 @@ export class AppState extends EventEmitter {
       ('model' in patch && patch.model !== this.settings.model) ||
       ('minTurns' in patch && patch.minTurns !== this.settings.minTurns);
 
-    this.settings = { ...this.settings, ...patch };
+    // The patch comes over IPC, so it is not necessarily the shape it claims.
+    this.settings = mergeSettings(this.settings, patch as Record<string, unknown>);
     await saveSettings(this.settingsFile, this.settings);
     if (needsQueueRebuild) this.buildQueue();
     return this.settings;
