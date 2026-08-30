@@ -76,7 +76,11 @@ declare global {
   interface Window {
     brain: {
       status(): Promise<Status>;
-      graph(): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }>;
+      graph(): Promise<{
+        nodes: GraphNodeData[];
+        edges: GraphEdgeData[];
+        galaxies: Array<{ id: string; noteIds: string[] }>;
+      }>;
       settings(): Promise<Record<string, unknown>>;
       recentEvents(): Promise<BrainEvent[]>;
       skills(): Promise<SkillDef[]>;
@@ -511,6 +515,9 @@ function logActivity(e: BrainEvent): void {
 async function refreshGraph(): Promise<void> {
   const g = await window.brain.graph();
   graph.setData(g.nodes, g.edges);
+  // Basins are assigned after the bodies exist, so every note has something
+  // to be assigned to.
+  graph.setGalaxies(g.galaxies);
   renderCatLegend();
   $('empty').classList.toggle('hidden', g.nodes.length > 0);
   await hydrateSkills();
@@ -1450,6 +1457,27 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-void refreshAll();
-void loadForge();
+/**
+ * The window opens before the main process has finished starting - the vault
+ * has to be opened and the server brought up first, and only then are the IPC
+ * handlers registered. So the first load can arrive before there is anything
+ * to answer it, and the whole refresh rejects on the first call.
+ *
+ * Retry rather than reorder: showing the window immediately is the right
+ * behaviour, and a few hundred milliseconds of patience here costs nothing.
+ */
+async function firstLoad(): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      await refreshAll();
+      await loadForge();
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  // Out of patience: let the next vault change or the poll below try again.
+}
+
+void firstLoad();
 setInterval(() => void refreshGraph(), 20000);

@@ -24,6 +24,7 @@ import fs from 'node:fs/promises';
 import { loadSettings, saveSettings, resolveApiKey, type Settings } from './settings.js';
 import type { BrainEvent, Session } from '../core/types.js';
 import type { Graph } from '../core/vault/vault.js';
+import { clusterNotes, type Galaxy } from '../core/cluster/index.js';
 
 export interface BrainStatus {
   serverUrl: string | null;
@@ -488,8 +489,22 @@ export class AppState extends EventEmitter {
     return this.settings;
   }
 
-  graph(): Graph {
-    return this.vault.graph();
+  /**
+   * The graph, plus which galaxy each note belongs to.
+   *
+   * Clustering lives here rather than in the vault: the vault's job is notes
+   * on disk, and it should not know that anything groups them. Passing the
+   * previous run back in is what keeps a galaxy's identity stable as the vault
+   * grows, so a basin does not jump on screen when a note is added.
+   */
+  /** Last run's galaxies, so identity survives the next one. */
+  private lastGalaxies: Galaxy[] = [];
+
+  graph(): Graph & { galaxies: Array<{ id: string; noteIds: string[] }> } {
+    const g = this.vault.graph();
+    const { galaxies } = clusterNotes(this.vault.list(), { previous: this.lastGalaxies });
+    this.lastGalaxies = galaxies;
+    return { ...g, galaxies: galaxies.map((x) => ({ id: x.id, noteIds: x.noteIds })) };
   }
 
   status(): BrainStatus {

@@ -45,6 +45,8 @@ interface Body extends GraphNodeData {
   pd: number;
   /** Recent world positions - the filament the particle draws. */
   trail: Array<{ x: number; y: number; z: number }>;
+  /** Index into `basins`, or -1 for a note that belongs to no galaxy. */
+  basin: number;
 }
 
 interface Dust {
@@ -53,6 +55,8 @@ interface Dust {
   sz: number;
   s: number;
   a: number;
+  /** Dust belongs to a basin too, or the shape would keep one body. */
+  basin: number;
 }
 
 /** An expanding shockwave from an activated note. */
@@ -121,6 +125,44 @@ const FT_C = Math.cos(FACE_TILT);
 const FT_S = Math.sin(FACE_TILT);
 /** Anonymous particles that give the object its body. */
 const DUST_COUNT = 5200;
+
+/**
+ * A galaxy: one attractor basin, offset in world space and scaled to fit
+ * alongside the others.
+ *
+ * Every particle still rides the same Aizawa field - the flow is what the
+ * object *is*, and clustering must not cost that. What changes is where the
+ * basin sits and how large it is, so notes about one subject swirl together
+ * and apart from the rest.
+ */
+interface Basin {
+  id: string;
+  ox: number;
+  oy: number;
+  oz: number;
+  scale: number;
+}
+
+/**
+ * How far the basins sit from the centre, relative to one basin's radius.
+ *
+ * The attractor spans roughly 1.5 units either side of its own centre, so at
+ * anything under about 2.5 two basins touch and read as one wide cloud rather
+ * than as two objects. This leaves a clear lane between them.
+ */
+const BASIN_SPREAD = 3.1;
+
+/**
+ * Distance between the ring of basins and the viewer, as a fraction of the
+ * spread. A little depth stops the ring reading as a flat carousel.
+ */
+const BASIN_DEPTH = 0.34;
+
+/** Core diameter, as a multiple of a basin's own radius. */
+const CORE_SIZE = 3.4;
+
+/** Kept low: the core is a density cue, not a light source. */
+const CORE_ALPHA = 0.16;
 
 /** All ambient motion (flow, auto-camera, twinkle, murmurs) honors this. */
 const REDUCED_MOTION =
@@ -213,6 +255,10 @@ function seedParticle(rand: () => number): { sx: number; sy: number; sz: number 
 export class BrainGraph {
   private ctx: CanvasRenderingContext2D;
   private bodies = new Map<string, Body>();
+  /** One basin per galaxy. Empty means a single, centred object, as before. */
+  private basins: Basin[] = [];
+  private coreSprite?: HTMLCanvasElement;
+  private basinOf = new Map<string, number>();
   private dust: Dust[] = [];
 
   private stars: Star[] = [];
@@ -306,7 +352,8 @@ export class BrainGraph {
     this.dust = Array.from({ length: DUST_COUNT }, () => ({
       ...seedParticle(rand),
       s: 0.45 + rand() * 0.95,
-      a: 0.07 + rand() * 0.12
+      a: 0.07 + rand() * 0.12,
+      basin: -1
     }));
   }
 
@@ -331,11 +378,80 @@ export class BrainGraph {
         px: prev?.px ?? 0,
         py: prev?.py ?? 0,
         pd: prev?.pd ?? 1,
-        trail: prev?.trail ?? []
+        trail: prev?.trail ?? [],
+        basin: this.basinOf.get(n.id) ?? -1
       });
     }
     this.bodies = next;
     this.ripples = this.ripples.filter((r) => next.has(r.id));
+  }
+
+  /**
+   * Arrange the notes into one basin per galaxy.
+   *
+   * Passing nothing, or a single galaxy, leaves the object exactly as it was:
+   * one centred attractor. The basins only appear once there is genuinely
+   * more than one subject in the vault, so a young brain does not get split
+   * into an archipelago for the sake of it.
+   */
+  setGalaxies(galaxies: Array<{ id: string; noteIds: string[] }>): void {
+    this.basinOf = new Map();
+
+    if (galaxies.length < 2) {
+      this.basins = [];
+      for (const b of this.bodies.values()) b.basin = -1;
+      for (const d of this.dust) d.basin = -1;
+      return;
+    }
+
+    // Basins shrink as they multiply, so the whole object keeps its footprint
+    // rather than sprawling off the edges of the stage.
+    const shrink = 1 / Math.sqrt(galaxies.length);
+    const radius = BASIN_SPREAD * shrink;
+
+    this.basins = galaxies.map((g, i) => {
+      const angle = (i / galaxies.length) * TWO_PI;
+      // Sizeable galaxies get a slightly larger basin, but the range is
+      // deliberately narrow - a galaxy of forty should not dwarf one of five.
+      const weight = 0.82 + 0.36 * (g.noteIds.length / Math.max(galaxies[0]?.noteIds.length ?? 1, 1));
+      for (const id of g.noteIds) this.basinOf.set(id, i);
+      return {
+        id: g.id,
+        ox: Math.cos(angle) * radius,
+        oy: 0,
+        oz: Math.sin(angle) * radius * BASIN_DEPTH,
+        scale: shrink * weight
+      };
+    });
+
+    for (const b of this.bodies.values()) b.basin = this.basinOf.get(b.id) ?? -1;
+    this.assignDust();
+  }
+
+  /**
+   * Share the dust out across the basins in proportion to their notes.
+   *
+   * Without this the dust stays one central cloud while the notes move away
+   * from it, and the galaxies read as sparse dots floating beside the real
+   * object rather than as objects themselves.
+   */
+  private assignDust(): void {
+    if (!this.basins.length) {
+      for (const d of this.dust) d.basin = -1;
+      return;
+    }
+    const weights = this.basins.map((b) => b.scale * b.scale);
+    const total = weights.reduce((a, b) => a + b, 0) || 1;
+    let at = 0;
+    let acc = 0;
+    this.dust.forEach((d, i) => {
+      const share = (i + 1) / this.dust.length;
+      while (at < this.basins.length - 1 && share > acc + (weights[at] ?? 0) / total) {
+        acc += (weights[at] ?? 0) / total;
+        at++;
+      }
+      d.basin = at;
+    });
   }
 
   /** Categories are dormant while the object is monochrome. */
@@ -773,14 +889,19 @@ export class BrainGraph {
     b.y = this.cy + ry;
     b.z = rz;
     // Back into attractor space (undoing the face-on tilt), so releasing
-    // hands the particle to the flow.
-    const v1 = -ry;
-    const d1 = rz;
+    // hands the particle to the flow. This has to undo the particle's own
+    // basin as well as the tilt - inverting with the global SCALE alone would
+    // hand the flow coordinates from a basin that is not the one it is in,
+    // and the note would be flung out of its galaxy on release.
+    const basin = b.basin >= 0 ? this.basins[b.basin] : undefined;
+    const k = basin ? basin.scale * SCALE : SCALE;
+    const v1 = -(ry - (basin ? basin.oy * SCALE : 0));
+    const d1 = rz - (basin ? basin.oz * SCALE : 0);
     const v0 = v1 * FT_C + d1 * FT_S;
     const d0 = -v1 * FT_S + d1 * FT_C;
-    b.sx = rx / SCALE;
-    b.sy = d0 / SCALE;
-    b.sz = Z_MID + v0 / SCALE;
+    b.sx = (rx - (basin ? basin.ox * SCALE : 0)) / k;
+    b.sy = d0 / k;
+    b.sz = Z_MID + v0 / k;
   }
 
   private hitTest(x: number, y: number): Body | null {
@@ -869,14 +990,21 @@ export class BrainGraph {
     return { x: this.cx + x1 * pd, y: this.cy + y2 * pd, pd };
   }
 
-  /** Attractor space -> world space, tipped so the spiral disc faces the viewer. */
-  private toWorld(sx: number, sy: number, sz: number): { x: number; y: number; z: number } {
-    const v0 = (sz - Z_MID) * SCALE;
-    const d0 = sy * SCALE;
+  /**
+   * Attractor space -> world space, tipped so the spiral disc faces the viewer.
+   *
+   * With a basin, the same flow is scaled down and moved off centre - so every
+   * galaxy is the same object, drawn smaller, somewhere else.
+   */
+  private toWorld(sx: number, sy: number, sz: number, basin: number): { x: number; y: number; z: number } {
+    const b = basin >= 0 ? this.basins[basin] : undefined;
+    const k = b ? b.scale * SCALE : SCALE;
+    const v0 = (sz - Z_MID) * k;
+    const d0 = sy * k;
     return {
-      x: this.cx + sx * SCALE,
-      y: this.cy - (v0 * FT_C - d0 * FT_S),
-      z: v0 * FT_S + d0 * FT_C
+      x: this.cx + sx * k + (b ? b.ox * SCALE : 0),
+      y: this.cy - (v0 * FT_C - d0 * FT_S) + (b ? b.oy * SCALE : 0),
+      z: v0 * FT_S + d0 * FT_C + (b ? b.oz * SCALE : 0)
     };
   }
 
@@ -901,7 +1029,7 @@ export class BrainGraph {
           flowStep(b, step);
           flowStep(b, step);
         }
-        const w = this.toWorld(b.sx, b.sy, b.sz);
+        const w = this.toWorld(b.sx, b.sy, b.sz, b.basin);
         b.x = w.x;
         b.y = w.y;
         b.z = w.z;
@@ -990,6 +1118,74 @@ export class BrainGraph {
     return sprite;
   }
 
+  /**
+   * A gaussian falloff, drawn once and reused.
+   *
+   * A radial gradient with a couple of stops has a visible edge where the
+   * last stop lands. Sampling exp(-r^2) per pixel gives a core that fades to
+   * nothing with no ring at all, which is what makes it read as light rather
+   * than as a drawn circle.
+   */
+  private gaussianSprite(): HTMLCanvasElement {
+    if (this.coreSprite) return this.coreSprite;
+    const S = 256;
+    const c = S / 2;
+    const sprite = document.createElement('canvas');
+    sprite.width = sprite.height = S;
+    const sctx = sprite.getContext('2d');
+    if (!sctx) return sprite;
+    const img = sctx.createImageData(S, S);
+    // sigma as a fraction of the radius: tight enough to have a core, wide
+    // enough that the tail is gone before the sprite's edge.
+    const sigma = S * 0.17;
+    const twoSigmaSq = 2 * sigma * sigma;
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const dx = x - c;
+        const dy = y - c;
+        const v = Math.exp(-(dx * dx + dy * dy) / twoSigmaSq);
+        const i = (y * S + x) * 4;
+        img.data[i] = 255;
+        img.data[i + 1] = 255;
+        img.data[i + 2] = 255;
+        img.data[i + 3] = Math.round(v * 255);
+      }
+    }
+    sctx.putImageData(img, 0, 0);
+    this.coreSprite = sprite;
+    return sprite;
+  }
+
+  /**
+   * The light each galaxy sits in.
+   *
+   * Every basin is the same flow drawn small and moved aside, which leaves the
+   * galaxies reading as scattered dust with nothing at the middle. A soft
+   * gaussian core at each basin's centre gives them somewhere to be scattered
+   * *around* - the light the arms are turning about.
+   *
+   * Additive and very low alpha on purpose: it should look like the dust is
+   * denser toward the middle, not like a lamp has been placed there.
+   */
+  private drawGalaxyCores(ctx: CanvasRenderingContext2D): void {
+    if (!this.basins.length) return;
+    const sprite = this.gaussianSprite();
+    const prev = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < this.basins.length; i++) {
+      const b = this.basins[i];
+      if (!b) continue;
+      // The middle of the attractor's own basin, not of its bounding box.
+      const w = this.toWorld(0, 0, Z_MID, i);
+      const pt = this.project(w.x, w.y, w.z);
+      const size = b.scale * SCALE * CORE_SIZE * pt.pd;
+      ctx.globalAlpha = CORE_ALPHA * this.depthAlpha(pt.pd);
+      ctx.drawImage(sprite, pt.x - size / 2, pt.y - size / 2, size, size);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = prev;
+  }
+
   /** Depth cue: far things recede, near things pop. */
   private depthAlpha(pd: number): number {
     return Math.min(1, 0.3 + 0.8 * pd);
@@ -1013,11 +1209,15 @@ export class BrainGraph {
     ctx.translate(this.offsetX, this.offsetY);
     ctx.scale(this.scale, this.scale);
 
+    // Under the dust, so the particles read as denser toward each core rather
+    // than as sitting on top of a glow.
+    this.drawGalaxyCores(ctx);
+
     // The anonymous body of the shape: lighter and airier than the real notes,
     // so the two particle species stay visually distinct.
     const dustSprite = this.dotSprite(COLORS.dust);
     for (const d of this.dust) {
-      const w = this.toWorld(d.sx, d.sy, d.sz);
+      const w = this.toWorld(d.sx, d.sy, d.sz, d.basin);
       const pt = this.project(w.x, w.y, w.z);
       const s = d.s * 3.4 * pt.pd;
       ctx.globalAlpha = d.a * this.depthAlpha(pt.pd);
@@ -1095,7 +1295,8 @@ export class BrainGraph {
       const STEPS = 60;
       for (let i = 1; i <= STEPS; i++) {
         for (let k = 0; k < 6; k++) flowStep(ghost, 0.003);
-        const w = this.toWorld(ghost.sx, ghost.sy, ghost.sz);
+        // The phantom rides its own body's basin, not a basin of its own.
+        const w = this.toWorld(ghost.sx, ghost.sy, ghost.sz, lit.b.basin);
         const pt = this.project(w.x, w.y, w.z);
         const fade = (1 - i / STEPS) * this.depthAlpha(pt.pd);
         ctx.strokeStyle = lit.color;
