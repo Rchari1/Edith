@@ -167,3 +167,22 @@ describe('clusterNotes', () => {
     }
   });
 });
+
+describe('what goes into a vector', () => {
+  it('ignores tags, which are facets rather than subjects', () => {
+    // Two notes about different things, sharing the status tag the distiller
+    // puts on half the vault. They must not be drawn together by it.
+    const tagged = [
+      ...QUANTUM.map((n) => ({ ...n, frontmatter: { ...n.frontmatter, tags: ['draft', 'result'] } })),
+      ...INFRA.map((n) => ({ ...n, frontmatter: { ...n.frontmatter, tags: ['draft', 'result'] } })),
+      ...DESIGN.map((n) => ({ ...n, frontmatter: { ...n.frontmatter, tags: ['draft', 'result'] } }))
+    ];
+    const withTags = clusterNotes(tagged);
+    const plain = clusterNotes([...QUANTUM, ...INFRA, ...DESIGN]);
+    // A tag shared by everything carries no information, so it must change
+    // nothing at all.
+    expect(withTags.galaxies.map((g) => g.noteIds.sort())).toEqual(
+      plain.galaxies.map((g) => g.noteIds.sort())
+    );
+  });
+});

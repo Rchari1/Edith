@@ -137,10 +137,13 @@ function tokenize(text: string): string[] {
 const TITLE_WEIGHT = 3;
 
 function noteText(note: Note): string[] {
+  // Title and body only. Tags are deliberately excluded: the distiller writes
+  // facets - `draft`, `todo`, `result`, `stability` - and two notes sharing a
+  // facet are not two notes about the same thing. Including them was enough to
+  // shatter a 34-note vault covering one subject into six galaxies, grouped by
+  // status rather than by topic; without them the same vault is one galaxy.
   const title = tokenize(note.frontmatter.title);
-  const body = tokenize(note.body);
-  const tags = note.frontmatter.tags?.flatMap((t) => tokenize(t)) ?? [];
-  const out: string[] = [...body, ...tags];
+  const out: string[] = tokenize(note.body);
   for (let i = 0; i < TITLE_WEIGHT; i++) out.push(...title);
   return out;
 }
