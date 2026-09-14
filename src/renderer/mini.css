@@ -1,0 +1,115 @@
+/*
+ * Mini mode: a narrow column docked to the left edge of the screen.
+ *
+ * Built only from the tokens in styles.css, so it reads as the same app. It has
+ * two layouts - the column and the folded strip - and which one shows is
+ * decided by the window's actual width (body.strip), never by a flag that
+ * could disagree with the bounds mid-animation.
+ */
+#mini {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--glass-border);
+}
+
+.mini-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px 8px 9px 12px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.mini-brand { font-size: var(--fs-small); letter-spacing: 0.08em; color: var(--text); white-space: nowrap; }
+.mini-mark { color: var(--muted); }
+.mini-project {
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-spacer { flex: 1; }
+
+.mini-live {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: background var(--t-fade) ease;
+}
+.mini-live.live { background: var(--live); animation: presence-blink 1.5s ease-in-out infinite; }
+
+.mini-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--dim);
+  cursor: pointer;
+}
+.mini-btn:hover { color: var(--text); background: var(--fill-hover); }
+.mini-btn svg { width: 13px; height: 13px; display: block; transition: transform var(--t-move) var(--ease); }
+/* Folded but peeking: the same button now pins it open, so it points the other way. */
+body.folded #mini-fold svg { transform: rotate(180deg); }
+
+.mini-stage { position: relative; flex: 1; min-height: 0; }
+#mini-graph { width: 100%; height: 100%; display: block; cursor: grab; }
+.mini-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 28px;
+  text-align: center;
+  font-size: var(--fs-body);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.mini-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 9px 12px 11px;
+  border-top: 1px solid var(--glass-border);
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+.mini-foot b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
+.mini-foot i.dot { display: inline-block; width: 7px; height: 7px; border-radius: var(--r); margin-right: 5px; }
+
+/* The edge you drag to resize - only while unfolded for good, since a peek is temporary. */
+.mini-grip { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 10; }
+body.folded .mini-grip { display: none; }
+
+/* ---------- strip: folded to the width of the main window's rail ---------- */
+.mini-strip {
+  display: none;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0 10px;
+  background: var(--bg);
+}
+.strip-count { font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+body.strip .mini-head,
+body.strip .mini-stage,
+body.strip .mini-foot,
+body.strip .mini-grip { display: none; }
+body.strip .mini-strip { display: flex; }

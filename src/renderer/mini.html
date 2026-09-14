@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>Edith mini</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./mini.css" />
+  </head>
+  <body>
+    <div id="mini">
+      <header class="mini-head">
+        <span class="mini-brand"><span class="mini-mark">&#9672;</span> EDITH</span>
+        <span class="mini-project" id="mini-project"></span>
+        <span class="mini-live" id="mini-live" title="Claude is working"></span>
+        <span class="mini-spacer"></span>
+        <button class="mini-btn" id="mini-open" title="Open Edith" aria-label="Open Edith"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+        <button class="mini-btn" id="mini-fold" title="Fold to a strip" aria-label="Fold to a strip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg></button>
+        <button class="mini-btn" id="mini-close" title="Close for this session" aria-label="Close for this session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
+      </header>
+
+      <main class="mini-stage">
+        <canvas id="mini-graph"></canvas>
+        <div class="mini-empty" id="mini-empty">Waiting for Claude to reach for your brain.</div>
+      </main>
+
+      <footer class="mini-foot">
+        <span><i class="dot considered"></i><b id="n-considered">0</b> considered</span>
+        <span><i class="dot opened"></i><b id="n-opened">0</b> opened</span>
+        <span><i class="dot saved"></i><b id="n-saved">0</b> saved</span>
+      </footer>
+
+      <div class="mini-grip" id="mini-grip" title="Drag to resize"></div>
+
+      <nav class="mini-strip" aria-label="Edith mini, folded">
+        <span class="mini-mark">&#9672;</span>
+        <span class="mini-live" id="strip-live"></span>
+        <span class="strip-count" id="strip-count"></span>
+        <span class="mini-spacer"></span>
+        <button class="mini-btn" id="strip-unfold" title="Unfold" aria-label="Unfold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>
+      </nav>
+
+      <div id="tooltip" class="tooltip hidden"></div>
+    </div>
+    <script type="module" src="./mini.ts"></script>
+  </body>
+</html>

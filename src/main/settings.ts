@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { DEFAULT_WIDTH } from '../core/mini/dock.js';
 
 export interface Settings {
   /** Stored locally. Falls back to ANTHROPIC_API_KEY when empty. */
@@ -11,6 +12,12 @@ export interface Settings {
   autoDistill: boolean;
   /** Skip sessions shorter than this. */
   minTurns: number;
+  /** Open mini mode on its own when a Claude session starts working. */
+  miniAutoShow: boolean;
+  /** Width of the mini panel when unfolded, in points. */
+  miniWidth: number;
+  /** Whether the mini panel is folded to a strip. */
+  miniCollapsed: boolean;
 }
 
 export function defaultSettings(userDataDir: string): Settings {
@@ -20,7 +27,10 @@ export function defaultSettings(userDataDir: string): Settings {
     model: 'claude-opus-5',
     port: 4319,
     autoDistill: true,
-    minTurns: 4
+    minTurns: 4,
+    miniAutoShow: true,
+    miniWidth: DEFAULT_WIDTH,
+    miniCollapsed: false
   };
 }
 
