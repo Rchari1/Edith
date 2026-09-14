@@ -16,8 +16,6 @@ export interface Settings {
   miniAutoShow: boolean;
   /** Width of the mini panel when unfolded, in points. */
   miniWidth: number;
-  /** Whether the mini panel is folded to a strip. */
-  miniCollapsed: boolean;
 }
 
 export function defaultSettings(userDataDir: string): Settings {
@@ -29,8 +27,7 @@ export function defaultSettings(userDataDir: string): Settings {
     autoDistill: true,
     minTurns: 4,
     miniAutoShow: true,
-    miniWidth: DEFAULT_WIDTH,
-    miniCollapsed: false
+    miniWidth: DEFAULT_WIDTH
   };
 }
 

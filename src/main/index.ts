@@ -15,6 +15,8 @@ import type { Dirent } from 'node:fs';
 let state: AppState | null = null;
 let win: BrowserWindow | null = null;
 let mini: MiniWindow | null = null;
+/** Set once quitting starts, so nothing re-creates a window or the panel on the way out. */
+let quitting = false;
 /** Decides when mini mode opens on its own. Outlives any one window, like the sessions it tracks. */
 const presence = new MiniPresence();
 
@@ -102,13 +104,14 @@ function onSessionActive(sessionId: string, at: number): void {
 
 /** Minimizing Edith - from the traffic light or the rail - turns it into the panel. */
 function enterMini(): void {
-  if (!mini) return;
+  if (quitting || !mini) return;
   presence.reopen();
   mini.show();
 }
 
 /** Bring the full window back, creating it if it was closed, and put the panel away. */
 function showMain(): void {
+  if (quitting) return;
   if (!win || win.isDestroyed()) {
     win = createWindow();
   } else {
@@ -436,12 +439,10 @@ function start(): void {
 
       const appState = state;
       mini = new MiniWindow(
-        { width: appState.settings.miniWidth, collapsed: appState.settings.miniCollapsed },
-        (prefs) =>
-          void appState.updateSettings({
-            ...(prefs.width !== undefined ? { miniWidth: prefs.width } : {}),
-            ...(prefs.collapsed !== undefined ? { miniCollapsed: prefs.collapsed } : {})
-          }),
+        { width: appState.settings.miniWidth },
+        (prefs) => {
+          if (prefs.width !== undefined) void appState.updateSettings({ miniWidth: prefs.width });
+        },
         pushMiniState
       );
       registerMiniIpc(appState, mini);
@@ -471,12 +472,18 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async (event) => {
+  quitting = true;
   mini?.destroy();
   mini = null;
   if (!state) return;
   event.preventDefault();
   const s = state;
   state = null;
-  await s.stop();
-  app.quit();
+  // Cleanup gets a bounded window. A quit that never finishes is worse than one
+  // that skips a flush: the process stays alive holding the single-instance
+  // lock, and Edith cannot be opened again until it is killed.
+  await Promise.race([s.stop().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 3000))]);
+  // Exit rather than quit: cleanup has run, and nothing - a window, or the dock
+  // icon re-creating one - should be able to cancel it now.
+  app.exit(0);
 });

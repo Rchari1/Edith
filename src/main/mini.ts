@@ -5,7 +5,7 @@ import { dockBounds, clampWidth, type Rect } from '../core/mini/dock.js';
 /** What both renderers are told about mini mode. */
 export interface MiniState {
   visible: boolean;
-  /** The saved preference. A peek unfolds the panel without changing it. */
+  /** Folded to the strip. A peek unfolds the panel without changing this. */
   collapsed: boolean;
   autoShow: boolean;
   /** When the current stretch of work began; the panel draws the notes touched since. */
@@ -14,7 +14,6 @@ export interface MiniState {
 
 export interface MiniPrefs {
   width: number;
-  collapsed: boolean;
 }
 
 /**
@@ -30,6 +29,11 @@ export interface MiniPrefs {
 export class MiniWindow {
   private win: BrowserWindow | null = null;
   private displayId: number | null = null;
+  /**
+   * Folded to a strip. Deliberately not remembered: whenever the panel opens,
+   * the graph is showing - a bare strip is not what minimizing Edith should give you.
+   */
+  private folded = false;
   /** Unfolded for the moment - on hover, or while Claude is touching the brain. */
   private peeking = false;
   private widthTimer: NodeJS.Timeout | undefined;
@@ -49,7 +53,7 @@ export class MiniWindow {
   }
 
   get collapsed(): boolean {
-    return this.prefs.collapsed;
+    return this.folded;
   }
 
   /** Appear beside the terminal the user is typing in, without taking focus from it. */
@@ -58,6 +62,8 @@ export class MiniWindow {
     if (win.isVisible()) return;
     // The cursor is the best signal of which display the user is working on.
     this.displayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
+    this.folded = false;
+    this.peeking = false;
     this.applyBounds(false);
     win.showInactive();
     this.changed();
@@ -72,9 +78,8 @@ export class MiniWindow {
 
   setCollapsed(collapsed: boolean): void {
     this.peeking = false;
-    if (this.prefs.collapsed !== collapsed) {
-      this.prefs = { ...this.prefs, collapsed };
-      this.persist({ collapsed });
+    if (this.folded !== collapsed) {
+      this.folded = collapsed;
       this.changed();
     }
     this.applyBounds(true);
@@ -82,14 +87,14 @@ export class MiniWindow {
 
   /** Unfold for a moment without touching the saved preference. */
   peek(on: boolean): void {
-    if (!this.prefs.collapsed || this.peeking === on) return;
+    if (!this.folded || this.peeking === on) return;
     this.peeking = on;
     this.applyBounds(true);
   }
 
   /** A drag on the panel's edge. The width is clamped here rather than trusted from the renderer. */
   setWidth(width: number): void {
-    if (this.prefs.collapsed) return;
+    if (this.folded) return;
     const next = clampWidth(width, this.workArea());
     if (next === this.prefs.width) return;
     this.prefs = { ...this.prefs, width: next };
@@ -111,7 +116,7 @@ export class MiniWindow {
     if (this.win && !this.win.isDestroyed()) return this.win;
     const mac = process.platform === 'darwin';
     const win = new BrowserWindow({
-      ...dockBounds(this.workArea(), this.prefs.width, this.prefs.collapsed),
+      ...dockBounds(this.workArea(), this.prefs.width, this.folded),
       show: false,
       frame: false,
       resizable: false,
@@ -158,7 +163,7 @@ export class MiniWindow {
 
   private applyBounds(animate: boolean): void {
     if (!this.win || this.win.isDestroyed()) return;
-    const folded = this.prefs.collapsed && !this.peeking;
+    const folded = this.folded && !this.peeking;
     this.win.setBounds(dockBounds(this.workArea(), this.prefs.width, folded), animate);
   }
 }
