@@ -6,7 +6,7 @@
 
 <p align="center"><strong>A second brain for Claude.</strong></p>
 
-Edith is a local, plain-Markdown knowledge base that Claude can read from and write to. Ask Claude to review your past sessions and it distils them into linked notes itself - no API key, no account, no inference of its own. When Claude consults the brain during a session, the parts it used light up in the app.
+Edith is a local, plain-Markdown knowledge base that Claude can read from and write to. Ask Claude to review your past sessions and it distils them into linked notes itself - no API key, no account, no inference of its own. 
 
 ```
 Claude session ──MCP──▶      Edith.app      ──▶  the graph lights up
