@@ -4,7 +4,7 @@
   "description": "Edith - a second brain for Claude. Ingests Claude sessions, distils them into linked notes, and lights up as Claude uses them.",
   "main": "./out/main/index.js",
   "author": "Raghav Chari",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "scripts": {
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",

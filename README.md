@@ -165,4 +165,6 @@ claude.ai export import - session-layer graph rendering - cross-machine sync - s
 
 ## License
 
-MIT © 2026 Raghav Chari and Kate Bonner. See [LICENSE](LICENSE).
+Edith is source-available under the [Functional Source License, Version 1.1, MIT Future License](LICENSE) (FSL-1.1-MIT). You can read, use, modify and share it for anything except offering it, or something substantially similar, as a competing commercial product or service. Each release becomes MIT-licensed two years after it is published.
+
+© 2026 Raghav Chari and Kate Bonner.
