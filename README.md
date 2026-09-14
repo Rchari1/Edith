@@ -26,30 +26,56 @@ Claude session ──MCP──▶      Edith.app      ──▶  the graph light
 
 ## Install
 
+Edith runs on macOS. You need:
+
+- [Node.js](https://nodejs.org) 22.12 or newer
+- [Claude Code](https://claude.com/claude-code), in the terminal or the VS Code extension
+
+There is no signed download yet, so for now you build Edith yourself. It takes a few minutes, and an app you build on your own Mac opens without security warnings.
+
 ```bash
-git clone https://github.com/Rchari1/SecondBrain.git
-cd SecondBrain
+git clone https://github.com/Rchari1/Edith.git
+cd Edith
 npm install
-npm run dev
-```
-
-On first launch Edith starts its MCP server on `127.0.0.1:4319` and registers itself with every Claude surface it finds - one user-scope entry in `~/.claude.json` covers the Claude Code CLI, the VS Code extension, and all your projects. Restart Claude Code and the brain is available.
-
-That's the whole setup. There is no account and no API key: ask Claude to review your sessions and it fills the brain itself.
-
-Optionally, **Settings -> Advanced** enables background distilling, where Edith distils finished sessions on its own using an Anthropic API key. That key bills separately from your Claude plan, so most people should leave it empty.
-
-To build a distributable `.dmg`:
-
-```bash
 npm run dist
 ```
 
-The app icon is generated from `assets/logo.svg` - Electron itself does the rasterising, so no cairo or rsvg toolchain is needed:
+Open the `.dmg` that lands in `release/`, drag **Edith** into Applications, and open it from there. Restart any Claude Code sessions that were already running.
+
+### What happens on first launch
+
+Edith starts its brain server on `127.0.0.1:4319` and connects itself to Claude. There is no account and no API key: ask Claude to *"review my recent sessions and save anything worth keeping"* and it fills the brain itself.
+
+Outside its own folder, Edith adds:
+
+| What | Where |
+|---|---|
+| Its server entry, so Claude can reach the brain | `~/.claude.json`, plus Claude Desktop's config if you have it |
+| A session-start hook that tells Claude the brain exists | `~/.claude/settings.json` |
+| The `/edith` command | `~/.claude/skills/edith` |
+| A handful of starter skills | `~/.claude/skills/`, managed from the Skills panel |
+
+Your notes are plain Markdown in `~/Library/Application Support/Edith/vault`.
+
+### Updating
 
 ```bash
-npm run icon
+cd Edith
+git pull
+npm install
+npm run dist
 ```
+
+Quit Edith, then drag the new build into Applications to replace the old one.
+
+### Troubleshooting
+
+- **Edith quits the moment it opens.** If you launched it from a VS Code terminal, open it from Applications or the Dock instead - VS Code's terminal sets an environment variable that stops the app from starting.
+- **Claude never uses the brain.** Restart Claude Code after Edith's first launch, then open **Connection** in Edith and check that the session primer says installed.
+
+### Uninstalling
+
+Quit Edith and delete it from Applications. Then remove what it added: the `edith` entry under `mcpServers` in `~/.claude.json`, the hook in `~/.claude/settings.json` whose command ends in `# edith:session-context`, the `~/.claude/skills/edith` folder, and any starter skills you no longer want. Your notes stay in `~/Library/Application Support/Edith` until you delete that folder too.
 
 ## How it works
 
@@ -128,6 +154,7 @@ npm run dev        # run the app with hot reload
 npm test           # 65 tests
 npm run typecheck  # tsc --noEmit
 npm run build      # bundle main, preload, renderer
+npm run icon       # regenerate the app icon from assets/logo.svg
 ```
 
 Tests cover path classification, fork resolution, malformed-line tolerance, vault merge semantics, config-write safety, a live MCP client over HTTP, and the full pipeline end to end with the API call mocked.
