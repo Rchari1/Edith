@@ -39,6 +39,7 @@
   "build": {
     "appId": "com.rchari.edith",
     "productName": "Edith",
+    "copyright": "Copyright © 2026 Raghav Chari and Kate Bonner",
     "files": [
       "out/**/*",
       "assets/icon.png",
