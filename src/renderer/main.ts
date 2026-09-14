@@ -52,6 +52,14 @@ type BrainEvent =
   | { type: 'ingest-progress'; done: number; total: number; label: string; at: number }
   | { type: 'status'; message: string; level: 'info' | 'warn' | 'error'; at: number };
 
+/** Mirrors MiniState in main/mini.ts. */
+interface MiniState {
+  visible: boolean;
+  collapsed: boolean;
+  autoShow: boolean;
+  stretchStartedAt: number | null;
+}
+
 type SkillShape = 'chain' | 'loop' | 'hub' | 'spiral';
 
 /** Where a skill keeps working, accumulated across runs. */
@@ -124,6 +132,10 @@ declare global {
       onEvent(cb: (e: BrainEvent) => void): () => void;
       onStatus(cb: (s: Status) => void): () => void;
       onVaultChanged(cb: () => void): () => void;
+      miniState(): Promise<MiniState | null>;
+      miniEnter(): Promise<void>;
+      miniSetAutoShow(on: boolean): Promise<MiniState | null>;
+      onMiniState(cb: (s: MiniState) => void): () => void;
     };
   }
 }
@@ -1121,6 +1133,15 @@ async function renderConnection(): Promise<void> {
 
   $('conn-rows').innerHTML = rows;
 
+  // Mini mode's one setting sits with the rest of how Edith meets Claude.
+  const auto = document.createElement('label');
+  auto.className = 'row';
+  auto.innerHTML = '<input type="checkbox" id="mini-auto" /> Open mini mode when a session starts';
+  $('conn-rows').appendChild(auto);
+  const box = $<HTMLInputElement>('mini-auto');
+  box.checked = miniLast?.autoShow ?? true;
+  box.addEventListener('change', () => void window.brain.miniSetAutoShow(box.checked).then(paintMini));
+
   // Only say something when something is wrong. When the primer is missing
   // Claude will rarely consult Edith at all, which is worth interrupting for;
   // when everything is healthy the rows above already say so.
@@ -1144,6 +1165,25 @@ $('conn-reregister').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+/* ---------------- mini mode ---------------- */
+
+/** The last state the main process reported, so the Connection pane can open already correct. */
+let miniLast: MiniState | null = null;
+
+function paintMini(s: MiniState | null): void {
+  if (!s) return;
+  miniLast = s;
+  const box = document.getElementById('mini-auto') as HTMLInputElement | null;
+  if (box) box.checked = s.autoShow;
+}
+
+// Minimizing is what turns the window into the panel, so the button just minimizes.
+$('rail-mini').addEventListener('click', () => void window.brain.miniEnter());
+window.brain.onMiniState(paintMini);
+// Rejects if this page loads before the main process has finished starting;
+// it pushes the state itself once it has.
+window.brain.miniState().then(paintMini).catch(() => {});
 
 /* ---------------- the forge ---------------- */
 

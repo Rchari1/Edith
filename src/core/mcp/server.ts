@@ -204,7 +204,11 @@ export class BrainServer {
     this.stats.flush();
     const server = this.http;
     if (!server) return;
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+    // close() waits for every open connection to end, so a client holding one
+    // open - an MCP client's keep-alive, say - would stall shutdown indefinitely.
+    server.closeAllConnections();
+    await closed;
     this.http = null;
     this.boundPort = null;
   }

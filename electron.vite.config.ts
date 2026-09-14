@@ -16,6 +16,13 @@ export default defineConfig({
   renderer: {
     resolve: { alias },
     root: resolve('src/renderer'),
-    build: { rollupOptions: { input: { index: resolve('src/renderer/index.html') } } }
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          mini: resolve('src/renderer/mini.html')
+        }
+      }
+    }
   }
 });

@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } from 'electron';
 import path from 'node:path';
 import { AppState } from './app-state.js';
+import { MiniWindow, type MiniState } from './mini.js';
+import { MiniPresence } from '../core/mini/presence.js';
 import { registerAll, unregisterAll } from '../core/onboarding/register.js';
 import { IMPORTABLE_EXTENSIONS } from '../core/importer/index.js';
 import { listInstalled, updateInstalled, deleteInstalled } from '../core/forge/installed.js';
@@ -12,6 +14,11 @@ import type { Dirent } from 'node:fs';
 
 let state: AppState | null = null;
 let win: BrowserWindow | null = null;
+let mini: MiniWindow | null = null;
+/** Set once quitting starts, so nothing re-creates a window or the panel on the way out. */
+let quitting = false;
+/** Decides when mini mode opens on its own. Outlives any one window, like the sessions it tracks. */
+const presence = new MiniPresence();
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -33,6 +40,13 @@ function createWindow(): BrowserWindow {
 
   window.once('ready-to-show', () => window.show());
 
+  // Edith is either the full window or the mini panel, never both: minimizing
+  // the window turns it into the panel, and bringing the window back puts the
+  // panel away.
+  window.on('minimize', () => enterMini());
+  window.on('restore', () => mini?.hide());
+  window.on('show', () => mini?.hide());
+
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: 'deny' };
@@ -46,8 +60,97 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
+/** The main window and the mini panel draw from the same stream, so every push goes to both. */
 function send(channel: string, payload: unknown): void {
-  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send(channel, payload);
+  }
+}
+
+function miniState(): MiniState | null {
+  if (!state?.settings || !mini) return null;
+  return {
+    visible: mini.visible,
+    collapsed: mini.collapsed,
+    autoShow: state.settings.miniAutoShow,
+    stretchStartedAt: presence.stretchStartedAt
+  };
+}
+
+function pushMiniState(): void {
+  const s = miniState();
+  if (s) send('mini:state', s);
+}
+
+/** Whether the full window is actually up, as opposed to closed or minimized into the panel. */
+function mainOnScreen(): boolean {
+  return Boolean(win && !win.isDestroyed() && win.isVisible() && !win.isMinimized());
+}
+
+/**
+ * A session wrote to its transcript. Mini mode opens for it unless the user
+ * turned that off, already closed the panel during this session, or has the
+ * full window up - which already shows the activity, and hiding a window the
+ * user has open would be worse than not opening the panel.
+ */
+function onSessionActive(sessionId: string, at: number): void {
+  if (!state?.settings) return;
+  const stretch = presence.stretchStartedAt;
+  const show = presence.sessionActive(sessionId, at, state.settings.miniAutoShow);
+  if (!mini) return;
+  if (show && !mini.visible && !mainOnScreen()) mini.show();
+  else if (presence.stretchStartedAt !== stretch) pushMiniState();
+}
+
+/** Minimizing Edith - from the traffic light or the rail - turns it into the panel. */
+function enterMini(): void {
+  if (quitting || !mini) return;
+  presence.reopen();
+  mini.show();
+}
+
+/** Bring the full window back, creating it if it was closed, and put the panel away. */
+function showMain(): void {
+  if (quitting) return;
+  if (!win || win.isDestroyed()) {
+    win = createWindow();
+  } else {
+    if (win.isMinimized()) win.restore();
+    win.show();
+  }
+  mini?.hide();
+  // The panel never activates the app, so bringing the window forward has to.
+  app.focus({ steal: true });
+  win.focus();
+}
+
+function registerMiniIpc(appState: AppState, panel: MiniWindow): void {
+  ipcMain.handle('mini:state', () => miniState());
+
+  // The rail button turns the window into the panel directly. Minimizing and
+  // waiting for the event is not reliable: with Stage Manager on, macOS moves
+  // the window into its strip instead, and no minimize event ever arrives.
+  ipcMain.handle('mini:enter', () => {
+    if (win && !win.isDestroyed()) win.hide();
+    enterMini();
+  });
+
+  ipcMain.handle('mini:close', () => {
+    presence.dismiss(Date.now());
+    panel.hide();
+  });
+
+  ipcMain.handle('mini:collapse', (_e, collapsed: boolean) => panel.setCollapsed(Boolean(collapsed)));
+  ipcMain.handle('mini:peek', (_e, on: boolean) => panel.peek(Boolean(on)));
+  ipcMain.handle('mini:set-width', (_e, width: number) => panel.setWidth(Number(width)));
+
+  ipcMain.handle('mini:open-app', () => showMain());
+
+  ipcMain.handle('mini:set-auto-show', async (_e, on: boolean) => {
+    await appState.updateSettings({ miniAutoShow: Boolean(on) });
+    pushMiniState();
+    return miniState();
+  });
 }
 
 function registerIpc(appState: AppState): void {
@@ -301,11 +404,8 @@ function applyDockIcon(): void {
 }
 
 function start(): void {
-  app.on('second-instance', () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  });
+  // The window may be closed, or minimized into the panel, while the app keeps running.
+  app.on('second-instance', () => showMain());
 
   void app.whenReady().then(async () => {
     applyDockIcon();
@@ -315,6 +415,7 @@ function start(): void {
     state.on('event', (event: BrainEvent) => {
       send('brain:event', event);
       if (event.type === 'saved') send('brain:vault-changed', null);
+      if (event.type === 'session-active') onSessionActive(event.sessionId, event.at);
     });
     state.on('vault-changed', () => send('brain:vault-changed', null));
     state.on('forge-changed', () => send('forge:changed', null));
@@ -335,6 +436,17 @@ function start(): void {
       await state.start();
       registerIpc(state);
       send('brain:status', state.status());
+
+      const appState = state;
+      mini = new MiniWindow(
+        { width: appState.settings.miniWidth },
+        (prefs) => {
+          if (prefs.width !== undefined) void appState.updateSettings({ miniWidth: prefs.width });
+        },
+        pushMiniState
+      );
+      registerMiniIpc(appState, mini);
+      pushMiniState();
     } catch (err) {
       send('brain:event', {
         type: 'status',
@@ -345,7 +457,10 @@ function start(): void {
     }
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) win = createWindow();
+      // The dock icon brings the full window back from anywhere: closed, or
+      // minimized into the panel. The panel is a window too, so an empty
+      // window list is no longer the test.
+      if (!mainOnScreen()) showMain();
     });
   });
 }
@@ -357,10 +472,18 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async (event) => {
+  quitting = true;
+  mini?.destroy();
+  mini = null;
   if (!state) return;
   event.preventDefault();
   const s = state;
   state = null;
-  await s.stop();
-  app.quit();
+  // Cleanup gets a bounded window. A quit that never finishes is worse than one
+  // that skips a flush: the process stays alive holding the single-instance
+  // lock, and Edith cannot be opened again until it is killed.
+  await Promise.race([s.stop().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 3000))]);
+  // Exit rather than quit: cleanup has run, and nothing - a window, or the dock
+  // icon re-creating one - should be able to cancel it now.
+  app.exit(0);
 });

@@ -47,6 +47,20 @@ const api = {
     ipcRenderer.invoke('brain:import-text', title, body, mode),
   openNoteFile: (id: string) => ipcRenderer.invoke('brain:open-note-file', id),
 
+  miniState: () => ipcRenderer.invoke('mini:state'),
+  miniEnter: () => ipcRenderer.invoke('mini:enter'),
+  miniClose: () => ipcRenderer.invoke('mini:close'),
+  miniCollapse: (collapsed: boolean) => ipcRenderer.invoke('mini:collapse', collapsed),
+  miniPeek: (on: boolean) => ipcRenderer.invoke('mini:peek', on),
+  miniSetWidth: (width: number) => ipcRenderer.invoke('mini:set-width', width),
+  miniOpenApp: () => ipcRenderer.invoke('mini:open-app'),
+  miniSetAutoShow: (on: boolean) => ipcRenderer.invoke('mini:set-auto-show', on),
+  onMiniState: (cb: (s: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, payload: unknown) => cb(payload);
+    ipcRenderer.on('mini:state', handler);
+    return () => ipcRenderer.off('mini:state', handler);
+  },
+
   onEvent: (cb: (e: unknown) => void) => {
     const handler = (_e: IpcRendererEvent, payload: unknown) => cb(payload);
     ipcRenderer.on('brain:event', handler);

@@ -121,6 +121,22 @@ const FT_C = Math.cos(FACE_TILT);
 const FT_S = Math.sin(FACE_TILT);
 /** Anonymous particles that give the object its body. */
 const DUST_COUNT = 5200;
+/**
+ * Mini mode runs beside the user's work for a whole session on a canvas a
+ * fraction of the size, so it keeps the body of the shape with far less dust.
+ */
+const COMPACT_DUST_COUNT = 1600;
+/** Stage width the whole shape needs, for fitting it to a narrow canvas. */
+const COMPACT_SPAN = 560;
+
+export interface GraphOptions {
+  /**
+   * The mini panel: a narrow canvas holding only the notes Claude has touched.
+   * There is no panel beside it to clear, so the shape is centred and fitted
+   * to the width instead of nudged aside and zoomed in.
+   */
+  compact?: boolean;
+}
 
 /** All ambient motion (flow, auto-camera, twinkle, murmurs) honors this. */
 const REDUCED_MOTION =
@@ -212,6 +228,9 @@ function seedParticle(rand: () => number): { sx: number; sy: number; sz: number 
 
 export class BrainGraph {
   private ctx: CanvasRenderingContext2D;
+  private readonly compact: boolean;
+  /** While set nothing moves or draws - a panel folded to a strip has nothing to show. */
+  private paused = false;
   private bodies = new Map<string, Body>();
   private dust: Dust[] = [];
 
@@ -262,16 +281,22 @@ export class BrainGraph {
   onSelect: (id: string | null) => void = () => {};
   onHover: (node: GraphNodeData | null, x: number, y: number) => void = () => {};
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement, opts: GraphOptions = {}) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas unavailable');
     this.ctx = ctx;
+    this.compact = opts.compact ?? false;
+    if (this.compact) {
+      this.panelNudge = 0;
+      this.panelNudgeTarget = 0;
+    }
     this.seedDust();
     this.attach();
     this.resize();
     // Open the scene already close to the shape, centered in the visible area.
     const r0 = canvas.getBoundingClientRect();
-    if (r0.width > 0) {
+    // A compact canvas was already fitted by resize().
+    if (!this.compact && r0.width > 0) {
       this.scale = 1.7;
       const px = r0.width / 2 + 150;
       const py = r0.height / 2;
@@ -288,6 +313,21 @@ export class BrainGraph {
     this.canvas.height = Math.max(1, Math.floor(rect.height * dpr));
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.seedStars(rect.width, rect.height);
+    if (this.compact) this.fit();
+  }
+
+  /** Zoom so the whole shape fits a narrow canvas, centred. */
+  private fit(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    this.scale = Math.min(1.2, Math.max(0.25, rect.width / COMPACT_SPAN));
+    this.offsetX = (rect.width / 2) * (1 - this.scale);
+    this.offsetY = (rect.height / 2) * (1 - this.scale);
+  }
+
+  /** Stop moving and drawing. Everything else is kept, so resuming picks up where it was. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
   }
 
   private seedStars(w: number, h: number): void {
@@ -303,7 +343,7 @@ export class BrainGraph {
 
   private seedDust(): void {
     const rand = mulberry(0x5eed);
-    this.dust = Array.from({ length: DUST_COUNT }, () => ({
+    this.dust = Array.from({ length: this.compact ? COMPACT_DUST_COUNT : DUST_COUNT }, () => ({
       ...seedParticle(rand),
       s: 0.45 + rand() * 0.95,
       a: 0.07 + rand() * 0.12
@@ -962,9 +1002,11 @@ export class BrainGraph {
   private frame = (t: number): void => {
     const dt = Math.min(48, t - this.lastT);
     this.lastT = t;
-    this.decay(dt);
-    this.updateMotion(dt, t);
-    this.render(t);
+    if (!this.paused) {
+      this.decay(dt);
+      this.updateMotion(dt, t);
+      this.render(t);
+    }
     requestAnimationFrame(this.frame);
   };
 
