@@ -44,6 +44,8 @@ const touched = new TouchedNotes();
 let nodes = new Map<string, GraphNodeData>();
 let shapes = new Map<string, SkillShape>();
 let state: MiniState = { visible: true, collapsed: false, autoShow: true, stretchStartedAt: null };
+/** Whether a Claude session has written to its transcript recently - what the blue light shows. */
+let live = false;
 
 /* ---------------- the notes ---------------- */
 
@@ -63,7 +65,20 @@ function redraw(): void {
   $('n-opened').textContent = String(c.opened);
   $('n-saved').textContent = String(c.saved);
   $('strip-count').textContent = touched.size ? String(touched.size) : '';
-  $('mini-empty').classList.toggle('hidden', touched.size > 0);
+  paintEmpty();
+}
+
+/**
+ * The empty state has to agree with the live light. Claude can work for a long
+ * stretch without touching the brain, and "waiting for Claude" beside a blinking
+ * light reads as broken.
+ */
+function paintEmpty(): void {
+  const empty = $('mini-empty');
+  empty.classList.toggle('hidden', touched.size > 0);
+  empty.textContent = live
+    ? 'Claude is working, but has not used your brain yet. Notes it searches, opens or saves will light up here.'
+    : 'Waiting for a Claude session. Notes it searches, opens or saves will light up here.';
 }
 
 /**
@@ -94,14 +109,17 @@ async function apply(e: BrainEvent): Promise<void> {
 
 let liveTimer: number | undefined;
 
+function setLive(on: boolean): void {
+  live = on;
+  $('mini-live').classList.toggle('live', on);
+  $('strip-live').classList.toggle('live', on);
+  paintEmpty();
+}
+
 function markLive(): void {
-  $('mini-live').classList.add('live');
-  $('strip-live').classList.add('live');
+  setLive(true);
   window.clearTimeout(liveTimer);
-  liveTimer = window.setTimeout(() => {
-    $('mini-live').classList.remove('live');
-    $('strip-live').classList.remove('live');
-  }, LIVE_MS);
+  liveTimer = window.setTimeout(() => setLive(false), LIVE_MS);
 }
 
 /* ---------------- folding ---------------- */
