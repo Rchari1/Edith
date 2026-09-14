@@ -137,4 +137,4 @@ claude.ai export import - session-layer graph rendering - cross-machine sync - s
 
 ## License
 
-MIT
+MIT © 2026 Raghav Chari and Kate Bonner. See [LICENSE](LICENSE).
