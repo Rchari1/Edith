@@ -131,11 +131,16 @@ const COMPACT_SPAN = 560;
 
 export interface GraphOptions {
   /**
-   * The mini panel: a narrow canvas holding only the notes Claude has touched.
-   * There is no panel beside it to clear, so the shape is centred and fitted
-   * to the width instead of nudged aside and zoomed in.
+   * Mini mode: a small canvas beside the user's work. There is no panel beside
+   * it to clear, so the shape is centred and fitted to the width instead of
+   * nudged aside and zoomed in.
    */
   compact?: boolean;
+  /**
+   * Cap on frames per second. Mini mode animates all session long in a window
+   * that is always on top, where a steady 30fps looks the same as 60.
+   */
+  maxFps?: number;
 }
 
 /** All ambient motion (flow, auto-camera, twinkle, murmurs) honors this. */
@@ -229,8 +234,8 @@ function seedParticle(rand: () => number): { sx: number; sy: number; sz: number 
 export class BrainGraph {
   private ctx: CanvasRenderingContext2D;
   private readonly compact: boolean;
-  /** While set nothing moves or draws - a panel folded to a strip has nothing to show. */
-  private paused = false;
+  /** Minimum time between drawn frames, from GraphOptions.maxFps; 0 draws on every refresh. */
+  private readonly frameBudget: number;
   private bodies = new Map<string, Body>();
   private dust: Dust[] = [];
 
@@ -286,6 +291,8 @@ export class BrainGraph {
     if (!ctx) throw new Error('2D canvas unavailable');
     this.ctx = ctx;
     this.compact = opts.compact ?? false;
+    // A little under the exact interval, so refresh-rate jitter never drops a frame it should keep.
+    this.frameBudget = opts.maxFps ? 1000 / opts.maxFps - 2 : 0;
     if (this.compact) {
       this.panelNudge = 0;
       this.panelNudgeTarget = 0;
@@ -323,11 +330,6 @@ export class BrainGraph {
     this.scale = Math.min(1.2, Math.max(0.25, rect.width / COMPACT_SPAN));
     this.offsetX = (rect.width / 2) * (1 - this.scale);
     this.offsetY = (rect.height / 2) * (1 - this.scale);
-  }
-
-  /** Stop moving and drawing. Everything else is kept, so resuming picks up where it was. */
-  setPaused(paused: boolean): void {
-    this.paused = paused;
   }
 
   private seedStars(w: number, h: number): void {
@@ -1000,13 +1002,16 @@ export class BrainGraph {
   private lastT = performance.now();
 
   private frame = (t: number): void => {
+    // Under a frame cap, let display refreshes pass until enough time has gone by.
+    if (t - this.lastT < this.frameBudget) {
+      requestAnimationFrame(this.frame);
+      return;
+    }
     const dt = Math.min(48, t - this.lastT);
     this.lastT = t;
-    if (!this.paused) {
-      this.decay(dt);
-      this.updateMotion(dt, t);
-      this.render(t);
-    }
+    this.decay(dt);
+    this.updateMotion(dt, t);
+    this.render(t);
     requestAnimationFrame(this.frame);
   };
 

@@ -56,6 +56,7 @@ type BrainEvent =
 interface MiniState {
   visible: boolean;
   collapsed: boolean;
+  shape: 'rail' | 'square';
   autoShow: boolean;
   stretchStartedAt: number | null;
 }

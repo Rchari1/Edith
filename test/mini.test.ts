@@ -5,7 +5,9 @@ import {
   COLLAPSED_WIDTH,
   DEFAULT_WIDTH,
   MIN_WIDTH,
-  MAX_WIDTH
+  MAX_WIDTH,
+  squareBounds,
+  SQUARE_SIZE
 } from '@core/mini/dock.js';
 import { MiniPresence, IDLE_GAP_MS } from '@core/mini/presence.js';
 import { TouchedNotes } from '@core/mini/touched.js';
@@ -34,6 +36,22 @@ describe('dockBounds', () => {
 
   it('never grows wider than the screen it is on', () => {
     expect(clampWidth(500, { x: 0, y: 0, width: 400, height: 800 })).toBe(400);
+  });
+});
+
+describe('squareBounds', () => {
+  it('sits in the bottom-left corner of the work area', () => {
+    expect(squareBounds(laptop)).toEqual({ x: 0, y: 25 + 931 - SQUARE_SIZE, width: SQUARE_SIZE, height: SQUARE_SIZE });
+  });
+
+  it('stays above a Dock at the bottom and beside one on the left', () => {
+    const b = squareBounds({ x: 72, y: 25, width: 1398, height: 850 });
+    expect(b.x).toBe(72);
+    expect(b.y + b.height).toBe(25 + 850);
+  });
+
+  it('never grows past a screen too small to hold it', () => {
+    expect(squareBounds({ x: 0, y: 0, width: 150, height: 400 })).toEqual({ x: 0, y: 250, width: 150, height: 150 });
   });
 });
 

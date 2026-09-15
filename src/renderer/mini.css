@@ -2,9 +2,9 @@
  * Mini mode: a narrow column docked to the left edge of the screen.
  *
  * Built only from the tokens in styles.css, so it reads as the same app. It has
- * two layouts - the column and the folded strip - and which one shows is
- * decided by the window's actual width (body.strip), never by a flag that
- * could disagree with the bounds mid-animation.
+ * three layouts - the column, the folded strip and the square - and which one
+ * shows is decided by the window's actual size (body.strip, body.square), never
+ * by a flag that could disagree with the bounds mid-animation.
  */
 #mini {
   position: relative;
@@ -65,19 +65,8 @@
 body.folded #mini-fold svg { transform: rotate(180deg); }
 
 .mini-stage { position: relative; flex: 1; min-height: 0; }
+/* Nothing is ever drawn over the graph - no messages, no labels - in any layout. */
 #mini-graph { width: 100%; height: 100%; display: block; cursor: grab; }
-.mini-empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 28px;
-  text-align: center;
-  font-size: var(--fs-body);
-  color: var(--muted);
-  pointer-events: none;
-}
 
 .mini-foot {
   display: flex;
@@ -95,21 +84,18 @@ body.folded #mini-fold svg { transform: rotate(180deg); }
 .mini-grip { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 10; }
 body.folded .mini-grip { display: none; }
 
-/* ---------- strip: folded to the width of the main window's rail ---------- */
-.mini-strip {
-  display: none;
-  position: absolute;
-  inset: 0;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0 10px;
-  background: var(--bg);
-}
-.strip-count { font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
-
+/*
+ * ---------- the strip and the square: nothing but the graph ----------
+ * No header, no counts, no labels. They are for glancing at, the graph keeps
+ * running the whole time, and a click brings the rail back.
+ */
 body.strip .mini-head,
-body.strip .mini-stage,
 body.strip .mini-foot,
-body.strip .mini-grip { display: none; }
-body.strip .mini-strip { display: flex; }
+body.strip .mini-grip,
+body.square .mini-head,
+body.square .mini-foot,
+body.square .mini-grip { display: none !important; }
+body.strip #mini-graph,
+body.square #mini-graph { cursor: pointer; }
+/* The square sits in the corner, so its open edges are the top and the right. */
+body.square #mini { border-top: 1px solid var(--glass-border); }

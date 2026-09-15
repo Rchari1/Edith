@@ -53,6 +53,7 @@ const api = {
   miniCollapse: (collapsed: boolean) => ipcRenderer.invoke('mini:collapse', collapsed),
   miniPeek: (on: boolean) => ipcRenderer.invoke('mini:peek', on),
   miniSetWidth: (width: number) => ipcRenderer.invoke('mini:set-width', width),
+  miniShape: (shape: 'rail' | 'square') => ipcRenderer.invoke('mini:shape', shape),
   miniOpenApp: () => ipcRenderer.invoke('mini:open-app'),
   miniSetAutoShow: (on: boolean) => ipcRenderer.invoke('mini:set-auto-show', on),
   onMiniState: (cb: (s: unknown) => void) => {

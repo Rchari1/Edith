@@ -6,6 +6,7 @@ import type { BrainEvent, SkillShape } from '@core/types.js';
 interface MiniState {
   visible: boolean;
   collapsed: boolean;
+  shape: 'rail' | 'square';
   autoShow: boolean;
   stretchStartedAt: number | null;
 }
@@ -20,6 +21,7 @@ interface MiniBrain {
   miniCollapse(collapsed: boolean): Promise<void>;
   miniPeek(on: boolean): Promise<void>;
   miniSetWidth(width: number): Promise<void>;
+  miniShape(shape: 'rail' | 'square'): Promise<void>;
   miniOpenApp(): Promise<void>;
   onEvent(cb: (e: BrainEvent) => void): () => void;
   onVaultChanged(cb: () => void): () => void;
@@ -38,14 +40,14 @@ const HOVER_DELAY_MS = 180;
 /** As in the main window, the live light lapses after this long without a signal. */
 const LIVE_MS = 45_000;
 
-const graph = new BrainGraph($<HTMLCanvasElement>('mini-graph'), { compact: true });
+const graph = new BrainGraph($<HTMLCanvasElement>('mini-graph'), { compact: true, maxFps: 30 });
 const touched = new TouchedNotes();
 /** Every note in the vault by id, so a touched note can be drawn without asking again. */
 let nodes = new Map<string, GraphNodeData>();
 let shapes = new Map<string, SkillShape>();
-let state: MiniState = { visible: true, collapsed: false, autoShow: true, stretchStartedAt: null };
-/** Whether a Claude session has written to its transcript recently - what the blue light shows. */
-let live = false;
+let state: MiniState = { visible: true, collapsed: false, shape: 'rail', autoShow: true, stretchStartedAt: null };
+/** The folded strip or the square: nothing but the graph, and a click brings the rail back. */
+let ambient = false;
 
 /* ---------------- the notes ---------------- */
 
@@ -54,31 +56,19 @@ async function loadNodes(): Promise<void> {
   nodes = new Map(g.nodes.map((n) => [n.id, n]));
 }
 
-/** Put exactly the touched notes on the canvas and bring the counts up to date. */
+/**
+ * Draw the whole brain and bring the counts up to date.
+ *
+ * Every layout draws every note, so the canvas is never an empty black box that
+ * needs a sentence laid over it to explain itself. The notes Claude touches light
+ * up within it, and the rail's counts say how many.
+ */
 function redraw(): void {
-  graph.setData(
-    touched.ids().map((id) => nodes.get(id)).filter((n): n is GraphNodeData => Boolean(n)),
-    []
-  );
+  graph.setData([...nodes.values()], []);
   const c = touched.counts();
   $('n-considered').textContent = String(c.considered);
   $('n-opened').textContent = String(c.opened);
   $('n-saved').textContent = String(c.saved);
-  $('strip-count').textContent = touched.size ? String(touched.size) : '';
-  paintEmpty();
-}
-
-/**
- * The empty state has to agree with the live light. Claude can work for a long
- * stretch without touching the brain, and "waiting for Claude" beside a blinking
- * light reads as broken.
- */
-function paintEmpty(): void {
-  const empty = $('mini-empty');
-  empty.classList.toggle('hidden', touched.size > 0);
-  empty.textContent = live
-    ? 'Claude is working, but has not used your brain yet. Notes it searches, opens or saves will light up here.'
-    : 'Waiting for a Claude session. Notes it searches, opens or saves will light up here.';
 }
 
 /**
@@ -110,10 +100,7 @@ async function apply(e: BrainEvent): Promise<void> {
 let liveTimer: number | undefined;
 
 function setLive(on: boolean): void {
-  live = on;
   $('mini-live').classList.toggle('live', on);
-  $('strip-live').classList.toggle('live', on);
-  paintEmpty();
 }
 
 function markLive(): void {
@@ -155,13 +142,20 @@ document.documentElement.addEventListener('mouseleave', () => {
   }, 300);
 });
 
-/** Pick the layout from the real width, so it can never disagree with the bounds mid-animation. */
+/**
+ * Pick the layout from the real size, so it can never disagree with the bounds
+ * mid-animation: a narrow column is the folded strip, a small square is the square.
+ */
 function fitLayout(): void {
-  const strip = window.innerWidth < 100;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const strip = w < 100;
+  const square = !strip && w < 400 && Math.abs(w - h) < 40;
   document.body.classList.toggle('strip', strip);
-  graph.setPaused(strip);
-  // The canvas may have just been revealed; size it now rather than on the next resize.
-  if (!strip) graph.resize();
+  document.body.classList.toggle('square', square);
+  ambient = strip || square;
+  // The canvas has just changed size; fit the shape to it now rather than on the next resize.
+  graph.resize();
 }
 
 function paintState(): void {
@@ -179,7 +173,20 @@ $('mini-fold').addEventListener('click', () => {
   if (folding) hovering = false;
   void brain.miniCollapse(folding);
 });
-$('strip-unfold').addEventListener('click', () => void brain.miniCollapse(false));
+$('mini-square').addEventListener('click', () => void brain.miniShape('square'));
+
+// The strip and the square have no buttons: a click brings the rail back. A drag
+// that orbits the graph also ends in a click, so movement rules it out.
+let pressedAt: { x: number; y: number } | null = null;
+$('mini').addEventListener('mousedown', (e) => { pressedAt = { x: e.clientX, y: e.clientY }; });
+$('mini').addEventListener('click', (e) => {
+  const dragged = pressedAt !== null && Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > 4;
+  pressedAt = null;
+  // A header button's click bubbles up here too; it has already done its own job.
+  if (dragged || (e.target as HTMLElement).closest('button')) return;
+  if (document.body.classList.contains('square')) void brain.miniShape('rail');
+  else if (document.body.classList.contains('strip')) void brain.miniCollapse(false);
+});
 $('mini-close').addEventListener('click', () => void brain.miniClose());
 $('mini-open').addEventListener('click', () => void brain.miniOpenApp());
 
@@ -203,19 +210,6 @@ grip.addEventListener('pointermove', (e) => {
 });
 
 /* ---------------- wiring ---------------- */
-
-graph.onHover = (node, x, y) => {
-  const tip = $('tooltip');
-  if (!node) {
-    tip.classList.add('hidden');
-    return;
-  }
-  tip.textContent = node.title;
-  tip.classList.remove('hidden');
-  // The panel is narrow: keep the name inside it.
-  tip.style.left = `${Math.max(8, Math.min(x + 12, window.innerWidth - tip.offsetWidth - 8))}px`;
-  tip.style.top = `${y + 14}px`;
-};
 
 brain.onEvent((e) => {
   if (e.type === 'session-active') {

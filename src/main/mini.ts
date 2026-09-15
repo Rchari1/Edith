@@ -1,12 +1,14 @@
 import { BrowserWindow, screen } from 'electron';
 import path from 'node:path';
-import { dockBounds, clampWidth, type Rect } from '../core/mini/dock.js';
+import { dockBounds, clampWidth, squareBounds, type Rect, type MiniShape } from '../core/mini/dock.js';
 
 /** What both renderers are told about mini mode. */
 export interface MiniState {
   visible: boolean;
   /** Folded to the strip. A peek unfolds the panel without changing this. */
   collapsed: boolean;
+  /** The rail, or the small square in the corner. */
+  shape: MiniShape;
   autoShow: boolean;
   /** When the current stretch of work began; the panel draws the notes touched since. */
   stretchStartedAt: number | null;
@@ -14,6 +16,7 @@ export interface MiniState {
 
 export interface MiniPrefs {
   width: number;
+  shape: MiniShape;
 }
 
 /**
@@ -23,8 +26,9 @@ export interface MiniPrefs {
  * macOS gives an app no way to reserve screen space, so this floats over
  * whatever is underneath rather than pushing it aside. Everything else follows
  * from not getting in the way: it never takes focus, even when clicked; it
- * follows the user across Spaces and over full-screen apps; and it folds to a
- * strip the width of the main window's rail.
+ * follows the user across Spaces and over full-screen apps. It can fold to a
+ * strip the width of the main window's rail, or shrink to a small square in the
+ * corner; both of those show nothing but the live graph.
  */
 export class MiniWindow {
   private win: BrowserWindow | null = null;
@@ -44,6 +48,8 @@ export class MiniWindow {
     private readonly persist: (patch: Partial<MiniPrefs>) => void,
     private readonly changed: () => void
   ) {
+    // Settings are hand-editable JSON; anything unrecognised is the rail.
+    this.prefs = { ...prefs, shape: prefs.shape === 'square' ? 'square' : 'rail' };
     screen.on('display-metrics-changed', this.redock);
     screen.on('display-removed', this.redock);
   }
@@ -54,6 +60,10 @@ export class MiniWindow {
 
   get collapsed(): boolean {
     return this.folded;
+  }
+
+  get shape(): MiniShape {
+    return this.prefs.shape;
   }
 
   /** Appear beside the terminal the user is typing in, without taking focus from it. */
@@ -77,9 +87,23 @@ export class MiniWindow {
   }
 
   setCollapsed(collapsed: boolean): void {
+    // Only the rail folds; the square is already as small as it gets.
+    if (this.prefs.shape !== 'rail') return;
     this.peeking = false;
     if (this.folded !== collapsed) {
       this.folded = collapsed;
+      this.changed();
+    }
+    this.applyBounds(true);
+  }
+
+  /** Switch between the rail and the square. Remembered, so minimizing Edith opens whichever was used last. */
+  setShape(shape: MiniShape): void {
+    this.folded = false;
+    this.peeking = false;
+    if (this.prefs.shape !== shape) {
+      this.prefs = { ...this.prefs, shape };
+      this.persist({ shape });
       this.changed();
     }
     this.applyBounds(true);
@@ -94,7 +118,7 @@ export class MiniWindow {
 
   /** A drag on the panel's edge. The width is clamped here rather than trusted from the renderer. */
   setWidth(width: number): void {
-    if (this.folded) return;
+    if (this.folded || this.prefs.shape !== 'rail') return;
     const next = clampWidth(width, this.workArea());
     if (next === this.prefs.width) return;
     this.prefs = { ...this.prefs, width: next };
@@ -116,7 +140,7 @@ export class MiniWindow {
     if (this.win && !this.win.isDestroyed()) return this.win;
     const mac = process.platform === 'darwin';
     const win = new BrowserWindow({
-      ...dockBounds(this.workArea(), this.prefs.width, this.folded),
+      ...this.bounds(),
       show: false,
       frame: false,
       resizable: false,
@@ -163,7 +187,12 @@ export class MiniWindow {
 
   private applyBounds(animate: boolean): void {
     if (!this.win || this.win.isDestroyed()) return;
-    const folded = this.folded && !this.peeking;
-    this.win.setBounds(dockBounds(this.workArea(), this.prefs.width, folded), animate);
+    this.win.setBounds(this.bounds(), animate);
+  }
+
+  private bounds(): Rect {
+    const area = this.workArea();
+    if (this.prefs.shape === 'square') return squareBounds(area);
+    return dockBounds(area, this.prefs.width, this.folded && !this.peeking);
   }
 }

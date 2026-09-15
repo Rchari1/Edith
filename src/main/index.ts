@@ -72,6 +72,7 @@ function miniState(): MiniState | null {
   return {
     visible: mini.visible,
     collapsed: mini.collapsed,
+    shape: mini.shape,
     autoShow: state.settings.miniAutoShow,
     stretchStartedAt: presence.stretchStartedAt
   };
@@ -143,6 +144,7 @@ function registerMiniIpc(appState: AppState, panel: MiniWindow): void {
   ipcMain.handle('mini:collapse', (_e, collapsed: boolean) => panel.setCollapsed(Boolean(collapsed)));
   ipcMain.handle('mini:peek', (_e, on: boolean) => panel.peek(Boolean(on)));
   ipcMain.handle('mini:set-width', (_e, width: number) => panel.setWidth(Number(width)));
+  ipcMain.handle('mini:shape', (_e, shape: string) => panel.setShape(shape === 'square' ? 'square' : 'rail'));
 
   ipcMain.handle('mini:open-app', () => showMain());
 
@@ -439,9 +441,10 @@ function start(): void {
 
       const appState = state;
       mini = new MiniWindow(
-        { width: appState.settings.miniWidth },
+        { width: appState.settings.miniWidth, shape: appState.settings.miniShape },
         (prefs) => {
           if (prefs.width !== undefined) void appState.updateSettings({ miniWidth: prefs.width });
+          if (prefs.shape !== undefined) void appState.updateSettings({ miniShape: prefs.shape });
         },
         pushMiniState
       );

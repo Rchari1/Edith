@@ -35,3 +35,18 @@ export function dockBounds(workArea: Rect, width: number, collapsed: boolean): R
     height: workArea.height
   };
 }
+
+/** The two shapes mini mode can take. The folded strip is a state of the rail, not a shape of its own. */
+export type MiniShape = 'rail' | 'square';
+
+/** Small enough to live in a corner, big enough that the shape still reads. */
+export const SQUARE_SIZE = 220;
+
+/**
+ * Where the square sits: the bottom-left corner of the work area - the same edge
+ * as the rail, so shrinking into it reads as the rail settling into its corner.
+ */
+export function squareBounds(workArea: Rect, size = SQUARE_SIZE): Rect {
+  const side = Math.max(1, Math.min(size, workArea.width, workArea.height));
+  return { x: workArea.x, y: workArea.y + workArea.height - side, width: side, height: side };
+}

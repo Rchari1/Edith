@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_WIDTH } from '../core/mini/dock.js';
+import { DEFAULT_WIDTH, type MiniShape } from '../core/mini/dock.js';
 
 export interface Settings {
   /** Stored locally. Falls back to ANTHROPIC_API_KEY when empty. */
@@ -16,6 +16,8 @@ export interface Settings {
   miniAutoShow: boolean;
   /** Width of the mini panel when unfolded, in points. */
   miniWidth: number;
+  /** The mini mode used last - the rail or the square - so minimizing returns to it. */
+  miniShape: MiniShape;
 }
 
 export function defaultSettings(userDataDir: string): Settings {
@@ -27,7 +29,8 @@ export function defaultSettings(userDataDir: string): Settings {
     autoDistill: true,
     minTurns: 4,
     miniAutoShow: true,
-    miniWidth: DEFAULT_WIDTH
+    miniWidth: DEFAULT_WIDTH,
+    miniShape: 'rail'
   };
 }
 
