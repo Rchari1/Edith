@@ -1,6 +1,6 @@
 import { BrowserWindow, screen } from 'electron';
 import path from 'node:path';
-import { dockBounds, clampWidth, squareBounds, type Rect, type MiniShape } from '../core/mini/dock.js';
+import { dockBounds, clampWidth, squareBounds, SQUARE_SIZE, type Point, type Rect, type MiniShape } from '../core/mini/dock.js';
 
 /** What both renderers are told about mini mode. */
 export interface MiniState {
@@ -41,6 +41,14 @@ export class MiniWindow {
   /** Unfolded for the moment - on hover, or while Claude is touching the brain. */
   private peeking = false;
   private widthTimer: NodeJS.Timeout | undefined;
+  /**
+   * Where each shape was dragged to, in screen coordinates: the rail's left
+   * edge, and the square's top-left corner. Null is the docked default. Kept
+   * for this run only - a fresh start docks them again, which is where they
+   * make sense before the user has said otherwise.
+   */
+  private railLeft: number | null = null;
+  private squareOrigin: Point | null = null;
   private readonly redock = (): void => this.applyBounds(false);
 
   constructor(
@@ -128,6 +136,22 @@ export class MiniWindow {
     this.widthTimer = setTimeout(() => this.persist({ width: next }), 400);
   }
 
+  /**
+   * A drag from the panel. The renderer asks for a top-left corner in screen
+   * coordinates; the panel follows onto whichever display that lands on and is
+   * clamped inside its work area, so it can cross screens but never leave them.
+   * The rail and the strip stay full height, so only their left edge moves.
+   */
+  moveTo(x: number, y: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const size = this.bounds();
+    const centre = { x: Math.round(x + size.width / 2), y: Math.round(y + size.height / 2) };
+    this.displayId = screen.getDisplayNearestPoint(centre).id;
+    if (this.prefs.shape === 'square') this.squareOrigin = { x, y };
+    else this.railLeft = x;
+    this.applyBounds(false);
+  }
+
   destroy(): void {
     screen.removeListener('display-metrics-changed', this.redock);
     screen.removeListener('display-removed', this.redock);
@@ -192,7 +216,7 @@ export class MiniWindow {
 
   private bounds(): Rect {
     const area = this.workArea();
-    if (this.prefs.shape === 'square') return squareBounds(area);
-    return dockBounds(area, this.prefs.width, this.folded && !this.peeking);
+    if (this.prefs.shape === 'square') return squareBounds(area, SQUARE_SIZE, this.squareOrigin);
+    return dockBounds(area, this.prefs.width, this.folded && !this.peeking, this.railLeft);
   }
 }

@@ -6,6 +6,27 @@ export interface Rect {
   height: number;
 }
 
+/** A point on screen, in the same coordinates as a Rect. */
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/**
+ * Keep a rectangle inside an area.
+ *
+ * A drag can ask for any position at all; this turns the request into a place
+ * the window can actually be. A rect larger than the area is pinned to the
+ * area's origin and cut to its size.
+ */
+export function clampToArea(rect: Rect, area: Rect): Rect {
+  const width = Math.min(rect.width, area.width);
+  const height = Math.min(rect.height, area.height);
+  const x = Math.round(Math.min(area.x + area.width - width, Math.max(area.x, rect.x)));
+  const y = Math.round(Math.min(area.y + area.height - height, Math.max(area.y, rect.y)));
+  return { x, y, width, height };
+}
+
 /** Folded to a strip the width of the main window's rail, so the two read as one family. */
 export const COLLAPSED_WIDTH = 44;
 export const DEFAULT_WIDTH = 320;
@@ -22,18 +43,23 @@ export function clampWidth(width: number, workArea: Rect): number {
 }
 
 /**
- * Where the mini window sits: flush against the left edge, full height.
+ * Where the mini window sits: full height, flush against the left edge unless
+ * it has been dragged - then `left` is where its left edge was put, kept on
+ * screen. The rail and the strip only ever move sideways.
  *
  * The work area rather than the display bounds - it already excludes the menu
  * bar and a Dock pinned to the left, so the panel lands beside them, not under.
  */
-export function dockBounds(workArea: Rect, width: number, collapsed: boolean): Rect {
-  return {
-    x: workArea.x,
-    y: workArea.y,
-    width: collapsed ? COLLAPSED_WIDTH : clampWidth(width, workArea),
-    height: workArea.height
-  };
+export function dockBounds(workArea: Rect, width: number, collapsed: boolean, left: number | null = null): Rect {
+  return clampToArea(
+    {
+      x: left ?? workArea.x,
+      y: workArea.y,
+      width: collapsed ? COLLAPSED_WIDTH : clampWidth(width, workArea),
+      height: workArea.height
+    },
+    workArea
+  );
 }
 
 /** The two shapes mini mode can take. The folded strip is a state of the rail, not a shape of its own. */
@@ -45,8 +71,10 @@ export const SQUARE_SIZE = 220;
 /**
  * Where the square sits: the bottom-left corner of the work area - the same edge
  * as the rail, so shrinking into it reads as the rail settling into its corner.
+ * Once dragged, it sits wherever it was put, kept on screen.
  */
-export function squareBounds(workArea: Rect, size = SQUARE_SIZE): Rect {
+export function squareBounds(workArea: Rect, size = SQUARE_SIZE, origin: Point | null = null): Rect {
   const side = Math.max(1, Math.min(size, workArea.width, workArea.height));
-  return { x: workArea.x, y: workArea.y + workArea.height - side, width: side, height: side };
+  const home = { x: workArea.x, y: workArea.y + workArea.height - side };
+  return clampToArea({ x: origin?.x ?? home.x, y: origin?.y ?? home.y, width: side, height: side }, workArea);
 }

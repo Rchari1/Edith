@@ -1,3 +1,5 @@
+import { HOME_ZOOM, clampZoom, visibleNudge, centredOffset, detailScale } from '@core/view.js';
+
 export interface GraphNodeData {
   id: string;
   title: string;
@@ -129,6 +131,21 @@ const COMPACT_DUST_COUNT = 1600;
 /** Stage width the whole shape needs, for fitting it to a narrow canvas. */
 const COMPACT_SPAN = 560;
 
+/**
+ * How much of the canvas each panel covers, in CSS pixels. These mirror the
+ * panel geometry in styles.css: the shell's left margin and width (folded to
+ * the rail alone), and the detail panel's width and right margin.
+ */
+const SIDEBAR_INSET = 350;
+const RAIL_INSET = 60;
+const DETAIL_INSET = 434;
+
+/**
+ * Lift on the dust. It is drawn additively, so where motes crowd they build
+ * the brighter knots of the cloud rather than flatly covering one another.
+ */
+const DUST_GAIN = 1.5;
+
 export interface GraphOptions {
   /**
    * Mini mode: a small canvas beside the user's work. There is no panel beside
@@ -150,7 +167,7 @@ const REDUCED_MOTION =
 const COLORS = {
   bg: '#0A0A0A',
   star: '#bbbbbb',
-  mono: '#d9d9d9',
+  mono: '#e4e4e4',
   dust: '#f5f5f5',
   ghost: '#555555',
   ring: '#7a7a7a',
@@ -251,17 +268,24 @@ export class BrainGraph {
   private lastInteract = -Infinity;
   private targetYaw: number | null = null;
 
-  /** Horizontal offset that keeps the shape clear of the rail and panel. */
-  private panelNudge = 172;
-  private panelNudgeTarget = 172;
+  /**
+   * Horizontal offset that keeps the shape centred in what the panels leave
+   * visible. The target moves as panels open and close; the value eases after it.
+   */
+  private leftInset = SIDEBAR_INSET;
+  private rightInset = 0;
+  private panelNudge = visibleNudge(SIDEBAR_INSET, 0);
+  private panelNudgeTarget = visibleNudge(SIDEBAR_INSET, 0);
 
   private scale = 1;
+  /** The zoom this canvas rests at; point sizes are measured against it. */
+  private homeScale = HOME_ZOOM;
+  /** Stage-space multiplier for point sizes at the current zoom. See detailScale. */
+  private detail = 1;
+  /** Pan, derived every frame from the zoom and the visible centre - never accumulated. */
   private offsetX = 0;
   private offsetY = 0;
-  /** Node the camera is gliding toward; null when the camera is free. */
-  private flyId: string | null = null;
   private breath = 1;
-  private panning = false;
   private orbiting = false;
   private dragNode: Body | null = null;
   private lastX = 0;
@@ -294,22 +318,16 @@ export class BrainGraph {
     // A little under the exact interval, so refresh-rate jitter never drops a frame it should keep.
     this.frameBudget = opts.maxFps ? 1000 / opts.maxFps - 2 : 0;
     if (this.compact) {
+      this.leftInset = 0;
       this.panelNudge = 0;
       this.panelNudgeTarget = 0;
     }
     this.seedDust();
     this.attach();
     this.resize();
-    // Open the scene already close to the shape, centered in the visible area.
-    const r0 = canvas.getBoundingClientRect();
-    // A compact canvas was already fitted by resize().
-    if (!this.compact && r0.width > 0) {
-      this.scale = 1.7;
-      const px = r0.width / 2 + 150;
-      const py = r0.height / 2;
-      this.offsetX = px * (1 - this.scale);
-      this.offsetY = py * (1 - this.scale);
-    }
+    // Open the scene already close to the shape. A compact canvas was fitted by
+    // resize(); either way the pan that centres it follows from the zoom each frame.
+    if (!this.compact) this.scale = HOME_ZOOM;
     requestAnimationFrame(this.frame);
   }
 
@@ -328,8 +346,7 @@ export class BrainGraph {
     const rect = this.canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
     this.scale = Math.min(1.2, Math.max(0.25, rect.width / COMPACT_SPAN));
-    this.offsetX = (rect.width / 2) * (1 - this.scale);
-    this.offsetY = (rect.height / 2) * (1 - this.scale);
+    this.homeScale = this.scale;
   }
 
   private seedStars(w: number, h: number): void {
@@ -518,7 +535,7 @@ export class BrainGraph {
         const spokes = members.slice(1);
         if (!hub || spokes.length === 0) continue;
 
-        ctx.lineWidth = 1;
+        ctx.lineWidth = this.detail;
         for (const b of spokes) {
           ctx.globalAlpha = alpha * 0.3 * this.depthAlpha((hub.pd + b.pd) / 2);
           ctx.strokeStyle = COLORS.skill;
@@ -543,7 +560,7 @@ export class BrainGraph {
             ctx.arc(
               hub.px + (target.px - hub.px) * kk,
               hub.py + (target.py - hub.py) * kk,
-              (n === 0 ? 2 : 1.1) * target.pd,
+              (n === 0 ? 2 : 1.1) * target.pd * this.detail,
               0,
               TWO_PI
             );
@@ -555,7 +572,7 @@ export class BrainGraph {
           ctx.globalAlpha = alpha * (b === hub ? 0.75 : 0.5) * this.depthAlpha(b.pd);
           ctx.strokeStyle = COLORS.skill;
           ctx.beginPath();
-          ctx.arc(b.px, b.py, (b === hub ? 8 : 5) * b.pd, 0, TWO_PI);
+          ctx.arc(b.px, b.py, (b === hub ? 8 : 5) * b.pd * this.detail, 0, TWO_PI);
           ctx.stroke();
         }
         continue;
@@ -631,7 +648,7 @@ export class BrainGraph {
       if (pts.length < 2) continue;
 
       // The line itself, segment by segment so depth can thin the far end.
-      ctx.lineWidth = 1;
+      ctx.lineWidth = this.detail;
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i];
         const b = pts[i + 1];
@@ -652,7 +669,7 @@ export class BrainGraph {
         ctx.globalAlpha = alpha * (1 - k / 14) * 0.6 * this.depthAlpha(p.pd);
         ctx.fillStyle = COLORS.accent;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, (k === 0 ? 2 : 1.1) * p.pd, 0, TWO_PI);
+        ctx.arc(p.x, p.y, (k === 0 ? 2 : 1.1) * p.pd * this.detail, 0, TWO_PI);
         ctx.fill();
       }
 
@@ -661,7 +678,7 @@ export class BrainGraph {
         ctx.globalAlpha = alpha * 0.5 * this.depthAlpha(b.pd);
         ctx.strokeStyle = COLORS.skill;
         ctx.beginPath();
-        ctx.arc(b.px, b.py, 5 * b.pd, 0, TWO_PI);
+        ctx.arc(b.px, b.py, 5 * b.pd * this.detail, 0, TWO_PI);
         ctx.stroke();
       }
 
@@ -676,14 +693,23 @@ export class BrainGraph {
    * whole shape drifts across instead of jumping.
    */
   setPanelInset(open: boolean): void {
-    this.panelNudgeTarget = open ? 172 : 30;
+    this.leftInset = open ? SIDEBAR_INSET : RAIL_INSET;
+    this.panelNudgeTarget = visibleNudge(this.leftInset, this.rightInset);
   }
 
-  /** Swing the camera around until the note faces us, then glide onto it. */
+  /** The detail panel covers the right of the canvas; centre in what it leaves. */
+  setDetailInset(open: boolean): void {
+    this.rightInset = open ? DETAIL_INSET : 0;
+    this.panelNudgeTarget = visibleNudge(this.leftInset, this.rightInset);
+  }
+
+  /**
+   * Swing the camera around until the note faces us. The view itself does not
+   * move: the object stays centred, and the note comes round to the front.
+   */
   focus(id: string): void {
     const body = this.bodies.get(id);
     if (!body) return;
-    this.flyId = id;
     const rx = body.x - this.cx;
     const rz = body.z;
     if (Math.hypot(rx, rz) > 1) this.targetYaw = -Math.PI / 2 - Math.atan2(rz, rx);
@@ -691,7 +717,6 @@ export class BrainGraph {
 
   private markInteract(): void {
     this.lastInteract = performance.now();
-    this.flyId = null;
     this.targetYaw = null;
   }
 
@@ -705,15 +730,8 @@ export class BrainGraph {
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.markInteract();
-      const rect = c.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      const next = Math.min(3.5, Math.max(0.2, this.scale * factor));
-      // Zoom toward the cursor rather than the origin.
-      this.offsetX = mx - ((mx - this.offsetX) * next) / this.scale;
-      this.offsetY = my - ((my - this.offsetY) * next) / this.scale;
-      this.scale = next;
+      // Zoom about the object, which stays centred; the pan follows from the zoom.
+      this.scale = clampZoom(this.scale * Math.exp(-e.deltaY * 0.0015));
     }, { passive: false });
 
     c.addEventListener('mousedown', (e) => {
@@ -726,10 +744,9 @@ export class BrainGraph {
         this.dragNode = hit;
         this.selected = hit.id;
         this.onSelect(hit.id);
-      } else if (e.button === 2 || e.shiftKey) {
-        // Right or shift-drag pans; plain drag orbits the shape.
-        this.panning = true;
       } else {
+        // Any other drag orbits the shape. There is no pan: the object is
+        // pinned to the centre, and the camera moves around it.
         this.orbiting = true;
         this.yawVel = 0;
       }
@@ -748,14 +765,6 @@ export class BrainGraph {
         this.yaw += dYaw;
         this.yawVel = dYaw;
         this.pitch = Math.min(0.9, Math.max(-0.9, this.pitch + (e.clientY - this.lastY) * 0.003));
-        this.lastX = e.clientX;
-        this.lastY = e.clientY;
-        return;
-      }
-      if (this.panning) {
-        this.markInteract();
-        this.offsetX += e.clientX - this.lastX;
-        this.offsetY += e.clientY - this.lastY;
         this.lastX = e.clientX;
         this.lastY = e.clientY;
         return;
@@ -780,7 +789,6 @@ export class BrainGraph {
     });
 
     window.addEventListener('mouseup', () => {
-      this.panning = false;
       this.orbiting = false;
       // A released particle simply rejoins the flow from wherever it was left -
       // the attractor reclaims it on its own.
@@ -793,11 +801,10 @@ export class BrainGraph {
   /** Screen event -> stage space (the plane projection lands on, before pan/zoom). */
   private toStage(e: MouseEvent): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
-    // Undo the breathing zoom first, then the pan/zoom transform.
-    const sx = (e.clientX - rect.left - cx) / this.breath + cx;
-    const sy = (e.clientY - rect.top - cy) / this.breath + cy;
+    // Undo the breathing zoom first, then the pan/zoom transform. Both pivot on
+    // the object's centre, so the object never sways off it.
+    const sx = (e.clientX - rect.left - this.cx) / this.breath + this.cx;
+    const sy = (e.clientY - rect.top - this.cy) / this.breath + this.cy;
     return { x: (sx - this.offsetX) / this.scale, y: (sy - this.offsetY) / this.scale };
   }
 
@@ -831,7 +838,8 @@ export class BrainGraph {
     let bestPd = -Infinity;
     for (const b of this.bodies.values()) {
       const d = Math.hypot(b.px - x, b.py - y);
-      if (d < b.r * b.pd + 8 && (b.pd > bestPd || d < bestD)) {
+      // The drawn radius plus a few screen pixels of slack, whatever the zoom.
+      if (d < b.r * b.pd * this.detail + 8 / this.scale && (b.pd > bestPd || d < bestD)) {
         best = b;
         bestD = d;
         bestPd = b.pd;
@@ -879,22 +887,6 @@ export class BrainGraph {
     this.cosP = Math.cos(this.pitch + wobble);
     this.sinP = Math.sin(this.pitch + wobble);
 
-    // Glide the viewport onto the focused note as it swings around.
-    if (this.flyId) {
-      const b = this.bodies.get(this.flyId);
-      if (!b) {
-        this.flyId = null;
-      } else {
-        const rect = this.canvas.getBoundingClientRect();
-        const tx = rect.width / 2 - b.px * this.scale;
-        const ty = rect.height / 2 - b.py * this.scale;
-        const k = Math.min(1, dt * 0.005);
-        this.offsetX += (tx - this.offsetX) * k;
-        this.offsetY += (ty - this.offsetY) * k;
-        if (this.targetYaw === null && Math.hypot(tx - this.offsetX, ty - this.offsetY) < 0.5) this.flyId = null;
-      }
-    }
-
     // A breath so shallow it is felt rather than seen.
     this.breath = REDUCED_MOTION ? 1 : 1 + 0.003 * Math.sin(t * 0.00012);
   }
@@ -931,6 +923,13 @@ export class BrainGraph {
     this.panelNudge += (this.panelNudgeTarget - this.panelNudge) * Math.min(1, dt / 160);
     this.cx = rect.width / 2 + this.panelNudge;
     this.cy = rect.height / 2;
+
+    // The pan is derived, never accumulated: whatever the window, the zoom or
+    // the panels have done since the last frame, the object is centred now.
+    const pan = centredOffset(this.cx, this.cy, this.scale);
+    this.offsetX = pan.x;
+    this.offsetY = pan.y;
+    this.detail = detailScale(this.scale, this.homeScale);
 
     this.updateCamera(dt, t);
 
@@ -1017,7 +1016,7 @@ export class BrainGraph {
 
   /* ---------------- drawing ---------------- */
 
-  /** A quiet dot with a slight gaussian falloff. */
+  /** A dot with a firm core and a short gaussian skirt. */
   private dotSprite(color: string): HTMLCanvasElement {
     let sprite = this.spriteCache.get(color);
     if (sprite) return sprite;
@@ -1027,9 +1026,12 @@ export class BrainGraph {
     sprite.width = sprite.height = S;
     const sctx = sprite.getContext('2d')!;
     const g = sctx.createRadialGradient(c, c, 0, c, c, c);
-    g.addColorStop(0, hexToRgba(color, 0.95));
-    g.addColorStop(0.5, hexToRgba(color, 0.42));
-    g.addColorStop(0.8, hexToRgba(color, 0));
+    // Most of the light in the core: a point that resolves as you zoom in,
+    // rather than a disc that only gets wider and softer.
+    g.addColorStop(0, hexToRgba(color, 1));
+    g.addColorStop(0.3, hexToRgba(color, 0.62));
+    g.addColorStop(0.6, hexToRgba(color, 0.1));
+    g.addColorStop(0.85, hexToRgba(color, 0));
     g.addColorStop(1, hexToRgba(color, 0));
     sctx.fillStyle = g;
     sctx.fillRect(0, 0, S, S);
@@ -1045,29 +1047,30 @@ export class BrainGraph {
   private render(t: number): void {
     const ctx = this.ctx;
     const rect = this.canvas.getBoundingClientRect();
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
 
     // A single deep-teal ground: flat, confident, no gradient theatrics.
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, rect.width, rect.height);
 
     ctx.save();
-    // Breathing zoom around the viewport center, then the user's pan/zoom.
-    ctx.translate(cx, cy);
+    // Breathing zoom about the object's centre, then the user's zoom about the
+    // same point - so the object sits exactly where updateMotion put it.
+    ctx.translate(this.cx, this.cy);
     ctx.scale(this.breath, this.breath);
-    ctx.translate(-cx, -cy);
+    ctx.translate(-this.cx, -this.cy);
     ctx.translate(this.offsetX, this.offsetY);
     ctx.scale(this.scale, this.scale);
 
     // The anonymous body of the shape: lighter and airier than the real notes,
-    // so the two particle species stay visually distinct.
+    // so the two particle species stay visually distinct. Additive, so where
+    // the motes crowd the cloud brightens rather than flattening.
     const dustSprite = this.dotSprite(COLORS.dust);
+    ctx.globalCompositeOperation = 'lighter';
     for (const d of this.dust) {
       const w = this.toWorld(d.sx, d.sy, d.sz);
       const pt = this.project(w.x, w.y, w.z);
-      const s = d.s * 3.4 * pt.pd;
-      ctx.globalAlpha = d.a * this.depthAlpha(pt.pd);
+      const s = d.s * 3.4 * pt.pd * this.detail;
+      ctx.globalAlpha = Math.min(1, d.a * DUST_GAIN * this.depthAlpha(pt.pd));
       ctx.drawImage(dustSprite, pt.x - s / 2, pt.y - s / 2, s, s);
     }
     ctx.globalAlpha = 1;
@@ -1082,7 +1085,7 @@ export class BrainGraph {
       const focused = this.selected === b.id || this.previewId === b.id;
       const stateColor = b.saved > 0.02 ? COLORS.saved : b.opened > 0.02 ? COLORS.opened : COLORS.considered;
       const color = activation > 0.04 ? stateColor : focused ? COLORS.accent : COLORS.mono;
-      const maxA = focused ? 0.4 : activation > 0.04 ? 0.28 : 0.1;
+      const maxA = focused ? 0.4 : activation > 0.04 ? 0.28 : 0.15;
       let prev = this.project(b.trail[0]!.x, b.trail[0]!.y, b.trail[0]!.z);
       for (let i = 1; i < b.trail.length; i++) {
         const pt = this.project(b.trail[i]!.x, b.trail[i]!.y, b.trail[i]!.z);
@@ -1091,14 +1094,14 @@ export class BrainGraph {
         ctx.strokeStyle = color;
         // A whisper of glow.
         ctx.globalAlpha = k * maxA * 0.22 * depth;
-        ctx.lineWidth = (focused ? 3.2 : 2.6) * k * pt.pd;
+        ctx.lineWidth = (focused ? 3.2 : 2.6) * k * pt.pd * this.detail;
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(pt.x, pt.y);
         ctx.stroke();
         // The thread.
         ctx.globalAlpha = k * maxA * depth;
-        ctx.lineWidth = (focused ? 1.3 : 1) * (0.4 + 0.6 * k) * pt.pd;
+        ctx.lineWidth = (focused ? 1.3 : 1) * (0.4 + 0.6 * k) * pt.pd * this.detail;
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(pt.x, pt.y);
@@ -1116,7 +1119,7 @@ export class BrainGraph {
       const grow = 14 + r.t * 70;
       ctx.globalAlpha = (1 - r.t) * 0.22 * this.depthAlpha(b.pd);
       ctx.strokeStyle = r.color;
-      ctx.lineWidth = 1 * b.pd;
+      ctx.lineWidth = b.pd * this.detail;
       ctx.beginPath();
       ctx.arc(b.px, b.py, grow * b.pd, 0, TWO_PI);
       ctx.stroke();
@@ -1148,13 +1151,13 @@ export class BrainGraph {
         ctx.strokeStyle = lit.color;
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = fade * lit.alpha * 0.2;
-        ctx.lineWidth = 3.2 * pt.pd;
+        ctx.lineWidth = 3.2 * pt.pd * this.detail;
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(pt.x, pt.y);
         ctx.stroke();
         ctx.globalAlpha = fade * lit.alpha * 0.8;
-        ctx.lineWidth = 1 * pt.pd;
+        ctx.lineWidth = pt.pd * this.detail;
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(pt.x, pt.y);
@@ -1181,7 +1184,7 @@ export class BrainGraph {
       const color = stateColor ?? (b.missing ? COLORS.ghost : COLORS.mono);
 
       const previewed = this.previewId === b.id;
-      const halo = (pr + activation * 2.5 * b.pd) * 1.5;
+      const halo = (pr + activation * 2.5 * b.pd) * 1.5 * this.detail;
       ctx.globalAlpha = ((b.missing ? 0.45 : 0.9) + activation * 0.1 + (previewed ? 0.22 : 0)) * depth;
       ctx.drawImage(this.dotSprite(previewed && !stateColor ? COLORS.accent : color), b.px - halo / 2, b.py - halo / 2, halo, halo);
       ctx.globalAlpha = 1;
@@ -1190,7 +1193,7 @@ export class BrainGraph {
       if (focus > 0) {
         // A small soft halo instead of a hard ring - restrained, not a bloom.
         ctx.globalCompositeOperation = 'lighter';
-        const aura = (pr + 5) * (1.6 + 0.5 * focus);
+        const aura = (pr + 5) * (1.6 + 0.5 * focus) * this.detail;
         ctx.globalAlpha = 0.28 * focus * depth;
         ctx.drawImage(this.dotSprite(COLORS.accent), b.px - aura / 2, b.py - aura / 2, aura, aura);
         ctx.globalCompositeOperation = 'source-over';

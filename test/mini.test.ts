@@ -7,7 +7,8 @@ import {
   MIN_WIDTH,
   MAX_WIDTH,
   squareBounds,
-  SQUARE_SIZE
+  SQUARE_SIZE,
+  clampToArea
 } from '@core/mini/dock.js';
 import { MiniPresence, IDLE_GAP_MS } from '@core/mini/presence.js';
 import { TouchedNotes } from '@core/mini/touched.js';
@@ -52,6 +53,61 @@ describe('squareBounds', () => {
 
   it('never grows past a screen too small to hold it', () => {
     expect(squareBounds({ x: 0, y: 0, width: 150, height: 400 })).toEqual({ x: 0, y: 250, width: 150, height: 150 });
+  });
+});
+
+describe('dragging the rail', () => {
+  it('keeps the left edge it was dragged to, still full height', () => {
+    expect(dockBounds(laptop, 320, false, 600)).toEqual({ x: 600, y: 25, width: 320, height: 931 });
+  });
+
+  it('parks flush against the right edge when dragged past it', () => {
+    const b = dockBounds(laptop, 320, false, 5000);
+    expect(b.x + b.width).toBe(1470);
+  });
+
+  it('cannot be dragged off the left edge either', () => {
+    expect(dockBounds({ x: 72, y: 25, width: 1398, height: 931 }, 320, false, -300).x).toBe(72);
+  });
+
+  it('folds to the strip where the rail was', () => {
+    expect(dockBounds(laptop, 320, true, 600)).toEqual({ x: 600, y: 25, width: COLLAPSED_WIDTH, height: 931 });
+  });
+
+  it('shifts left rather than growing off screen when widened at the right edge', () => {
+    const b = dockBounds(laptop, 500, false, 1470 - 320);
+    expect(b.width).toBe(500);
+    expect(b.x + b.width).toBe(1470);
+  });
+});
+
+describe('dragging the square', () => {
+  it('sits where it was put', () => {
+    expect(squareBounds(laptop, SQUARE_SIZE, { x: 900, y: 300 })).toEqual({ x: 900, y: 300, width: SQUARE_SIZE, height: SQUARE_SIZE });
+  });
+
+  it('is pulled back on screen when dropped half over an edge', () => {
+    const b = squareBounds(laptop, SQUARE_SIZE, { x: 1400, y: -50 });
+    expect(b.x + b.width).toBe(1470);
+    expect(b.y).toBe(25);
+  });
+
+  it('still lands in the corner until it has been dragged', () => {
+    expect(squareBounds(laptop, SQUARE_SIZE, null)).toEqual(squareBounds(laptop));
+  });
+});
+
+describe('clampToArea', () => {
+  it('leaves a rect that already fits alone', () => {
+    expect(clampToArea({ x: 10, y: 30, width: 100, height: 100 }, laptop)).toEqual({ x: 10, y: 30, width: 100, height: 100 });
+  });
+
+  it('pins a rect larger than the area to the area itself', () => {
+    expect(clampToArea({ x: -10, y: 0, width: 3000, height: 3000 }, laptop)).toEqual(laptop);
+  });
+
+  it('rounds to whole pixels, since window bounds are integers', () => {
+    expect(clampToArea({ x: 10.6, y: 30.2, width: 100, height: 100 }, laptop)).toMatchObject({ x: 11, y: 30 });
   });
 });
 

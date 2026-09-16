@@ -80,6 +80,10 @@ body.folded #mini-fold svg { transform: rotate(180deg); }
 .mini-foot b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
 .mini-foot i.dot { display: inline-block; width: 7px; height: 7px; border-radius: var(--r); margin-right: 5px; }
 
+/* The rail is carried by its header and footer; the graph between them keeps its orbit. */
+.mini-head, .mini-foot { cursor: grab; }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+
 /* The edge you drag to resize - only while unfolded for good, since a peek is temporary. */
 .mini-grip { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 10; }
 body.folded .mini-grip { display: none; }
@@ -95,7 +99,11 @@ body.strip .mini-grip,
 body.square .mini-head,
 body.square .mini-foot,
 body.square .mini-grip { display: none !important; }
+/* In these two the graph is only looked at: presses go to the panel itself,
+   so a drag carries it across the screen and a click brings the rail back. */
 body.strip #mini-graph,
-body.square #mini-graph { cursor: pointer; }
+body.square #mini-graph { pointer-events: none; }
+body.strip #mini,
+body.square #mini { cursor: grab; }
 /* The square sits in the corner, so its open edges are the top and the right. */
 body.square #mini { border-top: 1px solid var(--glass-border); }

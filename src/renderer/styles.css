@@ -136,6 +136,105 @@ body {
 }
 
 /*
+ * ---------- the window lights ----------
+ * The native traffic lights are hidden and drawn here instead, so that the
+ * green one can offer more than full screen. They keep their macOS colours,
+ * pitch and jobs: one hover reveals every glyph, and all three grey together
+ * when the window is behind another. Resting on the green one opens a menu
+ * of the shapes the window can take - full screen, or either mini mode - as
+ * the real one offers full screen and tiling.
+ */
+.lights {
+  position: absolute;
+  top: 13px;
+  left: 13px;
+  display: flex;
+  gap: 8px;
+  z-index: 61;
+  -webkit-app-region: no-drag;
+}
+.light {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--light-bg);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, 0.62);
+  cursor: default;
+  transition: background var(--t-snap) ease;
+}
+.light.close { --light-bg: #ff5f57; }
+.light.minimize { --light-bg: #febc2e; }
+.light.zoom { --light-bg: #28c840; }
+.light:active { filter: brightness(0.78); }
+.light svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+  opacity: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: opacity var(--t-snap) ease;
+}
+.light svg .solid { fill: currentColor; stroke: none; }
+/* Resting on any one of them shows what all of them do. */
+.lights:hover .light svg { opacity: 1; }
+/* Behind another window they go grey, and colour up again under the pointer. */
+body.blurred .light { --light-bg: #646467; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12); }
+body.blurred .lights:hover .light.close { --light-bg: #ff5f57; }
+body.blurred .lights:hover .light.minimize { --light-bg: #febc2e; }
+body.blurred .lights:hover .light.zoom { --light-bg: #28c840; }
+/* The green one's glyph points outward to enter full screen, inward to leave it. */
+.light.zoom svg.exit { display: none; }
+body.fullscreen .light.zoom svg.enter { display: none; }
+body.fullscreen .light.zoom svg.exit { display: block; }
+
+/* The menu hangs off the green light. Its top padding is part of it, so the
+   pointer can cross from the disc to the items without ever leaving. */
+.light-zoom-wrap { position: relative; width: 12px; height: 12px; }
+.light-menu {
+  position: absolute;
+  top: 12px;
+  left: -10px;
+  padding-top: 8px;
+  display: none;
+  min-width: 196px;
+}
+.light-menu.open { display: block; }
+.light-menu-box {
+  padding: 5px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r);
+  background: var(--panel-2);
+  background-image: var(--sheen);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.light-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: calc(var(--r) - 2px);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: default;
+  white-space: nowrap;
+}
+.light-menu-item:hover { background: var(--fill-hover); }
+.light-menu-sep { height: 1px; margin: 4px 6px; background: var(--a-hairline); }
+
+/*
  * ---------- shell: one slab of frosted glass over the galaxy ----------
  * The rail and the panel are two divisions of a single surface, not two
  * floating cards, so the glass, the border and the radius all live here and
@@ -1111,18 +1210,6 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
    frame. That is a flow, not a section. */
 
 .forge-anvil { opacity: 0.85; }
-
-/* The rail draws line icons; this one is a glyph, so it is sized and weighted
-   by hand to sit at the same optical size as the strokes beside it rather than
-   at whatever the font gives it. */
-.rail-glyph {
-  display: block;
-  /* 15px, not the 20px her SVGs use: this is a filled glyph against 1.15px
-     strokes, so matching the box would read far heavier than its neighbours. */
-  font-size: 15px;
-  line-height: 1;
-  opacity: 1;
-}
 
 /* The panel is the forge: two sections, what you have and what is waiting. */
 .forge-section { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
