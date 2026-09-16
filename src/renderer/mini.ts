@@ -21,6 +21,7 @@ interface MiniBrain {
   miniCollapse(collapsed: boolean): Promise<void>;
   miniPeek(on: boolean): Promise<void>;
   miniSetWidth(width: number): Promise<void>;
+  miniMove(x: number, y: number): Promise<void>;
   miniShape(shape: 'rail' | 'square'): Promise<void>;
   miniOpenApp(): Promise<void>;
   onEvent(cb: (e: BrainEvent) => void): () => void;
@@ -175,15 +176,87 @@ $('mini-fold').addEventListener('click', () => {
 });
 $('mini-square').addEventListener('click', () => void brain.miniShape('square'));
 
-// The strip and the square have no buttons: a click brings the rail back. A drag
-// that orbits the graph also ends in a click, so movement rules it out.
-let pressedAt: { x: number; y: number } | null = null;
-$('mini').addEventListener('mousedown', (e) => { pressedAt = { x: e.clientX, y: e.clientY }; });
-$('mini').addEventListener('click', (e) => {
-  const dragged = pressedAt !== null && Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > 4;
-  pressedAt = null;
+/* ---------------- moving ---------------- */
+
+/**
+ * Drag the panel across the screen.
+ *
+ * The rail drags by its header and footer, so the graph between them keeps
+ * its orbit. The strip and the square are nothing but graph and are there to
+ * be glanced at, so they drag from anywhere. A press that never travels is
+ * still a click.
+ *
+ * The position asked for is the pointer's place on screen less where it took
+ * hold of the panel. The pointer's place on screen is the window's own plus
+ * the pointer's place inside it - not e.screenX, which a synthetic event does
+ * not carry, and which is redundant once the window is following the pointer.
+ */
+const DRAG_SLOP = 4;
+const panel = $('mini');
+let press: { id: number; x: number; y: number } | null = null;
+let dragging = false;
+let pendingMove: { x: number; y: number } | null = null;
+
+function dragHandle(target: HTMLElement): boolean {
+  if (target.closest('button, .mini-grip')) return false;
+  return ambient || target.closest('.mini-head, .mini-foot') !== null;
+}
+
+function resetDrag(): void {
+  press = null;
+  dragging = false;
+  pendingMove = null;
+  document.body.classList.remove('dragging');
+}
+
+panel.addEventListener('pointerdown', (e) => {
+  // A release the page never saw - the window hidden mid-drag, say - must not
+  // leave every later click judged a drag. A new press starts clean.
+  resetDrag();
+  if (e.button !== 0 || !dragHandle(e.target as HTMLElement)) return;
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY };
+});
+
+panel.addEventListener('pointermove', (e) => {
+  if (!press || e.pointerId !== press.id) return;
+  if (!dragging) {
+    // Until the panel moves, the pointer's travel inside it is its travel on screen.
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) <= DRAG_SLOP) return;
+    dragging = true;
+    panel.setPointerCapture(press.id);
+    document.body.classList.add('dragging');
+    // Carrying the strip somewhere is not resting on it: no peek mid-drag.
+    window.clearTimeout(peekTimer);
+  }
+  const scheduled = pendingMove !== null;
+  pendingMove = { x: window.screenX + e.clientX - press.x, y: window.screenY + e.clientY - press.y };
+  if (scheduled) return;
+  requestAnimationFrame(() => {
+    if (pendingMove) void brain.miniMove(pendingMove.x, pendingMove.y);
+    pendingMove = null;
+  });
+});
+
+function endDrag(e: PointerEvent): void {
+  if (!press || e.pointerId !== press.id) return;
+  if (dragging && panel.hasPointerCapture(press.id)) panel.releasePointerCapture(press.id);
+  press = null;
+  // The click for this release fires next, synchronously; it must still see
+  // that this was a drag. Clear once that has been judged.
+  window.setTimeout(() => {
+    dragging = false;
+    document.body.classList.remove('dragging');
+  }, 0);
+}
+panel.addEventListener('pointerup', endDrag);
+panel.addEventListener('pointercancel', endDrag);
+window.addEventListener('blur', resetDrag);
+
+// The strip and the square have no buttons: a click brings the rail back. A
+// drag ends in a click too, so a drag rules it out.
+panel.addEventListener('click', (e) => {
   // A header button's click bubbles up here too; it has already done its own job.
-  if (dragged || (e.target as HTMLElement).closest('button')) return;
+  if (dragging || (e.target as HTMLElement).closest('button')) return;
   if (document.body.classList.contains('square')) void brain.miniShape('rail');
   else if (document.body.classList.contains('strip')) void brain.miniCollapse(false);
 });

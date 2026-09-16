@@ -133,8 +133,14 @@ declare global {
       onEvent(cb: (e: BrainEvent) => void): () => void;
       onStatus(cb: (s: Status) => void): () => void;
       onVaultChanged(cb: () => void): () => void;
+      windowClose(): Promise<void>;
+      windowMinimize(): Promise<void>;
+      windowZoom(): Promise<void>;
+      windowFullscreen(): Promise<boolean>;
+      onWindowFullscreen(cb: (on: boolean) => void): () => void;
       miniState(): Promise<MiniState | null>;
       miniEnter(): Promise<void>;
+      miniShape(shape: 'rail' | 'square'): Promise<void>;
       miniSetAutoShow(on: boolean): Promise<MiniState | null>;
       onMiniState(cb: (s: MiniState) => void): () => void;
     };
@@ -311,6 +317,7 @@ async function selectNote(id: string): Promise<void> {
   if (editing) setEditing(false);
   $('detail-body').innerHTML = renderMarkdown(note.body);
   $('detail').classList.remove('hidden');
+  graph.setDetailInset(true);
   renderNoteList(allNotes);
 }
 
@@ -370,6 +377,7 @@ async function selectSkill(name: string): Promise<void> {
   // A skill's file is Claude's, not the vault's - Edith will not delete it.
   $('btn-delete').classList.add('hidden');
   $('detail').classList.remove('hidden');
+  graph.setDetailInset(true);
   renderSkills();
 }
 
@@ -377,6 +385,7 @@ function closeDetail(): void {
   selectedSkill = null;
   $('btn-delete').classList.remove('hidden');
   $('detail').classList.add('hidden');
+  graph.setDetailInset(false);
   selectedId = null;
   graph.selected = null;
   renderNoteList(allNotes);
@@ -1180,7 +1189,59 @@ function paintMini(s: MiniState | null): void {
 }
 
 // Minimizing is what turns the window into the panel, so the button just minimizes.
-$('rail-mini').addEventListener('click', () => void window.brain.miniEnter());
+/* ---------------- window lights ---------------- */
+
+// The three discs at the top left are the window's own controls, drawn here
+// so that the green one can carry a menu of the window's shapes. See .lights.
+$('light-close').addEventListener('click', () => void window.brain.windowClose());
+$('light-minimize').addEventListener('click', () => void window.brain.windowMinimize());
+
+// All three grey together when the window is behind another, like the real ones.
+document.body.classList.toggle('blurred', !document.hasFocus());
+window.addEventListener('focus', () => document.body.classList.remove('blurred'));
+window.addEventListener('blur', () => document.body.classList.add('blurred'));
+
+// Rest on the green light and it offers the shapes the window can take, as the
+// real one offers full screen and tiling. A plain click is still full screen.
+const MENU_OPEN_MS = 450;
+const MENU_CLOSE_MS = 250;
+let menuTimer: number | undefined;
+function setMenu(open: boolean): void {
+  $('light-menu').classList.toggle('open', open);
+  $('light-zoom').setAttribute('aria-expanded', String(open));
+}
+$('light-zoom-wrap').addEventListener('mouseenter', () => {
+  window.clearTimeout(menuTimer);
+  menuTimer = window.setTimeout(() => setMenu(true), MENU_OPEN_MS);
+});
+$('light-zoom-wrap').addEventListener('mouseleave', () => {
+  window.clearTimeout(menuTimer);
+  menuTimer = window.setTimeout(() => setMenu(false), MENU_CLOSE_MS);
+});
+function pickShape(run: () => Promise<unknown>): void {
+  window.clearTimeout(menuTimer);
+  setMenu(false);
+  void run();
+}
+$('light-zoom').addEventListener('click', () => pickShape(() => window.brain.windowZoom()));
+$('menu-fullscreen').addEventListener('click', () => pickShape(() => window.brain.windowZoom()));
+// Choosing a mini shape here sets it before entering, so the panel opens in it
+// rather than in whichever was used last.
+$('menu-mini-rail').addEventListener('click', () =>
+  pickShape(async () => { await window.brain.miniShape('rail'); await window.brain.miniEnter(); }));
+$('menu-mini-square').addEventListener('click', () =>
+  pickShape(async () => { await window.brain.miniShape('square'); await window.brain.miniEnter(); }));
+
+// The green one's glyph points inward while the window is full screen.
+function paintFullscreen(on: boolean): void {
+  document.body.classList.toggle('fullscreen', on);
+  const label = on ? 'Exit Full Screen' : 'Enter Full Screen';
+  $('light-zoom').title = label;
+  $('light-zoom').setAttribute('aria-label', label);
+  $('menu-fullscreen').textContent = label;
+}
+window.brain.onWindowFullscreen(paintFullscreen);
+window.brain.windowFullscreen().then(paintFullscreen).catch(() => {});
 window.brain.onMiniState(paintMini);
 // Rejects if this page loads before the main process has finished starting;
 // it pushes the state itself once it has.

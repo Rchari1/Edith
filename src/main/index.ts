@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, type IpcMainInvokeEvent } from 'electron';
 import path from 'node:path';
 import { AppState } from './app-state.js';
 import { MiniWindow, type MiniState } from './mini.js';
@@ -39,6 +39,13 @@ function createWindow(): BrowserWindow {
   });
 
   window.once('ready-to-show', () => window.show());
+
+  // The renderer draws the window controls itself (see registerWindowIpc), so
+  // the native traffic lights step aside. Everything else about the window -
+  // resizing, the shadow, full screen - stays native.
+  if (process.platform === 'darwin') window.setWindowButtonVisibility(false);
+  window.on('enter-full-screen', () => window.webContents.send('window:fullscreen', true));
+  window.on('leave-full-screen', () => window.webContents.send('window:fullscreen', false));
 
   // Edith is either the full window or the mini panel, never both: minimizing
   // the window turns it into the panel, and bringing the window back puts the
@@ -125,6 +132,22 @@ function showMain(): void {
   win.focus();
 }
 
+/**
+ * The window's own controls. The renderer draws four lights - close, minimize,
+ * full screen, mini mode - so that the fourth is a true member of the group;
+ * the first three call these. Each acts on the window that asked.
+ */
+function registerWindowIpc(): void {
+  const of = (e: IpcMainInvokeEvent): BrowserWindow | null => BrowserWindow.fromWebContents(e.sender);
+  ipcMain.handle('window:close', (e) => of(e)?.close());
+  ipcMain.handle('window:minimize', (e) => of(e)?.minimize());
+  ipcMain.handle('window:zoom', (e) => {
+    const w = of(e);
+    if (w) w.setFullScreen(!w.isFullScreen());
+  });
+  ipcMain.handle('window:fullscreen', (e) => of(e)?.isFullScreen() ?? false);
+}
+
 function registerMiniIpc(appState: AppState, panel: MiniWindow): void {
   ipcMain.handle('mini:state', () => miniState());
 
@@ -144,6 +167,7 @@ function registerMiniIpc(appState: AppState, panel: MiniWindow): void {
   ipcMain.handle('mini:collapse', (_e, collapsed: boolean) => panel.setCollapsed(Boolean(collapsed)));
   ipcMain.handle('mini:peek', (_e, on: boolean) => panel.peek(Boolean(on)));
   ipcMain.handle('mini:set-width', (_e, width: number) => panel.setWidth(Number(width)));
+  ipcMain.handle('mini:move', (_e, x: number, y: number) => panel.moveTo(Number(x), Number(y)));
   ipcMain.handle('mini:shape', (_e, shape: string) => panel.setShape(shape === 'square' ? 'square' : 'rail'));
 
   ipcMain.handle('mini:open-app', () => showMain());
@@ -410,6 +434,8 @@ function start(): void {
   app.on('second-instance', () => showMain());
 
   void app.whenReady().then(async () => {
+    // Before the window exists: its page asks for these as soon as it loads.
+    registerWindowIpc();
     applyDockIcon();
     win = createWindow();
 

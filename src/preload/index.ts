@@ -47,12 +47,23 @@ const api = {
     ipcRenderer.invoke('brain:import-text', title, body, mode),
   openNoteFile: (id: string) => ipcRenderer.invoke('brain:open-note-file', id),
 
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowZoom: () => ipcRenderer.invoke('window:zoom'),
+  windowFullscreen: () => ipcRenderer.invoke('window:fullscreen'),
+  onWindowFullscreen: (cb: (on: boolean) => void) => {
+    const handler = (_e: IpcRendererEvent, on: boolean) => cb(on);
+    ipcRenderer.on('window:fullscreen', handler);
+    return () => ipcRenderer.off('window:fullscreen', handler);
+  },
+
   miniState: () => ipcRenderer.invoke('mini:state'),
   miniEnter: () => ipcRenderer.invoke('mini:enter'),
   miniClose: () => ipcRenderer.invoke('mini:close'),
   miniCollapse: (collapsed: boolean) => ipcRenderer.invoke('mini:collapse', collapsed),
   miniPeek: (on: boolean) => ipcRenderer.invoke('mini:peek', on),
   miniSetWidth: (width: number) => ipcRenderer.invoke('mini:set-width', width),
+  miniMove: (x: number, y: number) => ipcRenderer.invoke('mini:move', x, y),
   miniShape: (shape: 'rail' | 'square') => ipcRenderer.invoke('mini:shape', shape),
   miniOpenApp: () => ipcRenderer.invoke('mini:open-app'),
   miniSetAutoShow: (on: boolean) => ipcRenderer.invoke('mini:set-auto-show', on),
