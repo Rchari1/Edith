@@ -24,6 +24,13 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # The native SQLite module compiles from source here, and the node-gyp it
+      # uses still imports Python's distutils, which Python 3.12 removed. The
+      # runners ship a newer Python, so pin one that still has it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - run: npm ci
 
       # The tests run inside Electron's own copy of Node, so the native SQLite
