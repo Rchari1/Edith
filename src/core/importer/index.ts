@@ -35,9 +35,9 @@ export function titleFromFilename(filePath: string): string {
 /**
  * Read a file into an upsert payload.
  *
- * A file that already carries frontmatter - an exported Obsidian note, or a
- * note from another Edith vault - keeps its identity, so re-importing
- * deepens the existing note rather than creating a duplicate.
+ * A file that already carries frontmatter - a note exported from another
+ * Markdown app, or a note from another Edith vault - keeps its identity, so
+ * re-importing deepens the existing note rather than creating a duplicate.
  */
 export async function readImportable(filePath: string): Promise<UpsertInput> {
   const raw = await fs.readFile(filePath, 'utf8');

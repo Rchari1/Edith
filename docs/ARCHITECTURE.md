@@ -115,7 +115,7 @@ auth: account token; entitlement: license ID only (see Licensing)
 
 ### Conflict resolution [K6 — needs sign-off]
 
-Version vector per note. Ordered histories fast-forward. Concurrent edits: frontmatter merges field-wise deterministically (links/tags/sources union; latest-timestamp title), bodies produce a visible conflict copy (`<slug>.sync-conflict-<date>.md`) rather than a silent merge. Inspectable, Obsidian-familiar, no black boxes. CRDT bodies were considered and rejected for v1: complexity and opaque merges versus a format whose whole point is inspectability.
+Version vector per note. Ordered histories fast-forward. Concurrent edits: frontmatter merges field-wise deterministically (links/tags/sources union; latest-timestamp title), bodies produce a visible conflict copy (`<slug>.sync-conflict-<date>.md`) rather than a silent merge. Inspectable, familiar from any Markdown vault, no black boxes. CRDT bodies were considered and rejected for v1: complexity and opaque merges versus a format whose whole point is inspectability.
 
 ### Threat model (to be published with Milestone E)
 

@@ -6,7 +6,7 @@
 
 ## Product model
 
-Obsidian's model, adapted for Claude.
+A local vault of linked Markdown notes, adapted for Claude.
 
 - **Free local core.** Edith is a local MCP server. All user data lives on the user's machine as inspectable, portable files — Markdown notes as the source of truth, SQLite strictly as a rebuildable derived index. No data leaves the machine by default. If the company disappears, the user keeps a usable folder of files. Packaged as an MCPB desktop extension for one-click install in Claude Desktop; addable to Claude Code via `claude mcp add`. Transports: stdio for local clients, plus a Streamable HTTP mode so advanced users can self-host and add it as a claude.ai custom connector.
 - **Paid: end-to-end-encrypted sync.** A hosted relay that syncs a brain across a user's devices. The server stores and relays ciphertext only; keys never leave the client. We must be able to say truthfully that we cannot read user data. Licensing is a signed token the local server caches, valid offline for weeks; the license check transmits nothing but a license ID.
@@ -144,7 +144,7 @@ Design first, then build. **Do not start implementation until the encryption sch
 - Client `SyncEngine` inside the headless server: vault changes → per-note encrypted envelopes → relay; pull → decrypt → merge.
 - Relay service: stores opaque blobs keyed by opaque ids; `push`, `pull-since-cursor`, per-account storage; knows account id, license id, blob sizes/counts/timestamps — and nothing else.
 - Key management: client-generated root key, encoded as a recovery phrase; per-vault key wrapped by the root key; keys never transmitted. New-device enrollment via recovery phrase (v1).
-- Conflict resolution: proposed version-vector LWW per note with conflict copies for concurrent body edits (`<id>.sync-conflict-<date>.md`) — inspectable, Obsidian-familiar, no black-box merges.
+- Conflict resolution: proposed version-vector LWW per note with conflict copies for concurrent body edits (`<id>.sync-conflict-<date>.md`) — inspectable, familiar from any Markdown vault, no black-box merges.
 - Threat model documented and published: what a fully compromised server can and cannot learn.
 - Note the future hosted-plaintext opt-out here only as a pointer; no design work.
 

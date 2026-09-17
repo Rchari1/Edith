@@ -355,8 +355,8 @@ export class AppState extends EventEmitter {
   /**
    * Bring outside content into the brain.
    *
-   * 'verbatim' keeps the user's own writing exactly as-is - importing an
-   * Obsidian vault should not rewrite it. 'distill' runs the same extraction
+   * 'verbatim' keeps the user's own writing exactly as-is - importing a
+   * Markdown vault should not rewrite it. 'distill' runs the same extraction
    * used on sessions, for raw material like meeting notes or docs.
    */
   async importPaths(files: string[], mode: 'verbatim' | 'distill'): Promise<ImportSummary> {

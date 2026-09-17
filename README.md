@@ -21,7 +21,7 @@ Claude session ──MCP──▶      Edith.app      ──▶  the graph light
 - **Serves Claude over MCP.** `search_brain`, `read_note`, `list_notes`, and `save_note`. Claude both reads from and writes to the brain mid-session.
 - **Shows you the retrieval.** A search dims-glows what Claude *considered*; opening a note brightly glows what it actually *used*. Highlights fade over 30 seconds.
 - **Mini mode beside your session.** Minimize Edith and it becomes a narrow panel docked to the left edge of the screen, drawing your brain and lighting up the notes Claude reaches for - the window and the panel are never up at the same time. With the window closed or minimized, the panel also opens on its own when a Claude session starts. It never takes focus, folds to a strip the width of the rail or shrinks to a small square in the corner - both just the live graph - and stays closed for the rest of a session once you close it. Turn off the automatic opening under **Connection**.
-- **Takes your own content too.** **Add content** imports `.md`, `.markdown`, `.txt`, and `.mdx` files, or anything you paste. Files keep their existing frontmatter, so importing an Obsidian vault preserves ids and links instead of duplicating notes. Import as written, or distil into concepts.
+- **Takes your own content too.** **Add content** imports `.md`, `.markdown`, `.txt`, and `.mdx` files, or anything you paste. Files keep their existing frontmatter, so importing a Markdown vault preserves ids and links instead of duplicating notes. Import as written, or distil into concepts.
 - **Plain Markdown.** Files on disk are the source of truth. Edit them in any editor. Delete the index and it rebuilds.
 
 ## Install

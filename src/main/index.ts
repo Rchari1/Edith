@@ -243,7 +243,7 @@ function registerIpc(appState: AppState): void {
   /**
    * Pick a folder and collect the importable files inside it. Walking here
    * rather than in the renderer keeps filesystem access on this side of the
-   * bridge, and lets an Obsidian vault be added in one gesture.
+   * bridge, and lets a whole Markdown vault be added in one gesture.
    */
   ipcMain.handle('brain:pick-folder', async () => {
     if (!win) return [];
