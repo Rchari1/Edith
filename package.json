@@ -13,6 +13,7 @@
     "test:watch": "env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/vitest/vitest.mjs --pool=forks",
     "start": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "dist": "electron-vite build && electron-builder",
+    "release:mac": "electron-vite build && env APPLE_KEYCHAIN_PROFILE=edith-notary electron-builder --mac --publish never",
     "icon": "env -u ELECTRON_RUN_AS_NODE electron scripts/render-icon.cjs && iconutil -c icns assets/icon.iconset -o assets/icon.icns"
   },
   "dependencies": {
@@ -51,10 +52,13 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "icon": "assets/icon.icns",
-      "identity": null
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "directories": {
       "output": "release"
