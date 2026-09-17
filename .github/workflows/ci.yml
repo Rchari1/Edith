@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes the older run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # Edith ships for macOS, and parts of the core read macOS paths, so the
+    # checks run on the platform it is built for.
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The tests run inside Electron's own copy of Node, so the native SQLite
+      # module has to be built against Electron rather than against Node.
+      - name: Build native modules for Electron
+        run: npx electron-builder install-app-deps
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
