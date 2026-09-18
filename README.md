@@ -2,9 +2,14 @@
   <img src="assets/icon.png" alt="Edith" width="132" height="132">
 </p>
 
-<h1 align="center">Edith</h1>
+<h1 align="center">Edith Second Brain</h1>
 
-<p align="center"><strong>A second brain for Claude.</strong></p>
+<p align="center"><strong>A second brain for AI.</strong></p>
+
+<p align="center">
+  <a href="https://edithapp.ai">edithapp.ai</a> &middot;
+  <a href="https://github.com/Rchari1/Edith-SecondBrain/releases/latest">Download for macOS</a>
+</p>
 
 Edith is a local, plain-Markdown knowledge base that Claude can read from and write to. Ask Claude to review your past sessions and it distils them into linked notes itself - no API key, no account, no inference of its own. 
 
