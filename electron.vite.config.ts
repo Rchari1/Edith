@@ -17,6 +17,9 @@ export default defineConfig({
     resolve: { alias },
     root: resolve('src/renderer'),
     build: {
+      // Ship assets as files, never as data: URIs. The renderer's CSP allows
+      // images only from 'self', so an inlined logo would be blocked.
+      assetsInlineLimit: 0,
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),

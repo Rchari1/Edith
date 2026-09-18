@@ -24,7 +24,8 @@
   border-bottom: 1px solid var(--glass-border);
 }
 .mini-brand { font-size: var(--fs-small); letter-spacing: 0.08em; color: var(--text); white-space: nowrap; }
-.mini-mark { color: var(--muted); }
+/* The panel is narrow, so the wordmark sits at cap height of the old text. */
+.mini-logo { flex: none; display: block; height: 10px; width: auto; }
 .mini-project {
   min-width: 0;
   font-size: var(--fs-small);

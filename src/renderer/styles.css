@@ -668,14 +668,9 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
 
 .stage-headline { display: flex; align-items: baseline; gap: 10px; }
 
-.stage-name {
-  font-size: var(--fs-title);
-  font-weight: 400;
-  letter-spacing: 0.34em;
-  text-indent: 0.34em;
-  line-height: 1.1;
-  color: var(--text);
-}
+/* The wordmark stands where the set word used to, at the same optical size. */
+.stage-logo { display: block; height: calc(var(--fs-title) * 0.82); width: auto; }
+
 
 .stage-tagline {
   font-size: var(--fs-small);
