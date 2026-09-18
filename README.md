@@ -38,9 +38,8 @@ Edith runs on a Mac with Apple Silicon, macOS 13 or later. You also need
 notarised by Apple, so it opens with no security warnings. Open the `.dmg`, drag **Edith** into
 Applications, and open it from there. Restart any Claude Code sessions that were already running.
 
-On Windows? There is an experimental port at
-[Edith-Windows](https://github.com/Rchari1/Edith-Windows). Nobody has confirmed it on a real
-Windows machine yet.
+On Windows? The Windows build lives at
+[Edith-Windows](https://github.com/Rchari1/Edith-Windows).
 
 ### Or build it yourself
 
