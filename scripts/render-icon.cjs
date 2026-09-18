@@ -35,16 +35,22 @@ const GROUND = '#111010';
 const INSET = 0.0977;
 const RADIUS = 0.2246;
 
-/** Below this size the five letters cannot resolve, so the E stands in. */
-const MONOGRAM_UP_TO = 256;
+/**
+ * The whole word at every size. A single letter reads more sharply when small,
+ * but two other companies called Edith use a bare E, and at 16px nothing is
+ * legible anyway - so the word it is, and the icon can never be mistaken for
+ * someone else's.
+ */
+const MONOGRAM_UP_TO = 0;
 
 const SIZES = [16, 32, 64, 128, 256, 512, 1024];
 
 function pageFor(size) {
   const svg = fs.readFileSync(SVG, 'utf8').replace(/<\?xml[^>]*\?>/, '');
   const art = size <= MONOGRAM_UP_TO ? MONO : WORD;
-  // How much of the rounded square the art may use, across or down.
-  const fill = size <= MONOGRAM_UP_TO ? 0.46 : 0.72;
+  // How much of the rounded square's width the art takes. The word is wide and
+  // short, so it needs most of it to read at Dock size.
+  const fill = size <= MONOGRAM_UP_TO ? 0.46 : 0.88;
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;padding:0;width:${size}px;height:${size}px;background:transparent;overflow:hidden}
     #plate{position:absolute;inset:${INSET * 100}%;background:${GROUND};
