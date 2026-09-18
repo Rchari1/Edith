@@ -23,9 +23,18 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
-      - name: Build native modules for Electron
-        run: npx electron-builder install-app-deps
+      - name: What build tooling does this runner have?
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) { & $vswhere -products * -property displayName } else { "no vswhere: no Visual Studio installer present" }
+          "python: $(python --version 2>&1)"
+      - name: Install, showing what the native module decides to do
+        run: npm ci --foreground-scripts
+      - name: Did it use a prebuilt binary or compile?
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Filter *.node node_modules/better-sqlite3 | Select-Object -ExpandProperty FullName
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
