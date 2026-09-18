@@ -31,21 +31,31 @@ Claude session ──MCP──▶      Edith.app      ──▶  the graph light
 
 ## Install
 
-Edith runs on macOS. You need:
+Edith runs on a Mac with Apple Silicon, macOS 13 or later. You also need
+[Claude Code](https://claude.com/claude-code), in the terminal or the VS Code extension.
 
-- [Node.js](https://nodejs.org) 22.12 or newer
-- [Claude Code](https://claude.com/claude-code), in the terminal or the VS Code extension
+**[Download Edith](https://github.com/Rchari1/Edith-SecondBrain/releases/latest)** — signed and
+notarised by Apple, so it opens with no security warnings. Open the `.dmg`, drag **Edith** into
+Applications, and open it from there. Restart any Claude Code sessions that were already running.
 
-There is no signed download yet, so for now you build Edith yourself. It takes a few minutes, and an app you build on your own Mac opens without security warnings.
+On Windows? There is an experimental port at
+[Edith-Windows](https://github.com/Rchari1/Edith-Windows). Nobody has confirmed it on a real
+Windows machine yet.
+
+### Or build it yourself
+
+Needs [Node.js](https://nodejs.org) 22.12 or newer, and the Xcode command line tools
+(`xcode-select --install`) for the native database module:
 
 ```bash
-git clone https://github.com/Rchari1/Edith.git
-cd Edith
+git clone https://github.com/Rchari1/Edith-SecondBrain.git
+cd Edith-SecondBrain
 npm install
 npm run dist
 ```
 
-Open the `.dmg` that lands in `release/`, drag **Edith** into Applications, and open it from there. Restart any Claude Code sessions that were already running.
+The `.dmg` lands in `release/`. A build you make yourself is not notarised, but it opens anyway,
+because macOS trusts what you compiled on your own machine.
 
 ### What happens on first launch
 
@@ -156,10 +166,11 @@ Every note records the sessions it came from. That provenance is written from da
 
 ```bash
 npm run dev        # run the app with hot reload
-npm test           # 65 tests
+npm test           # 235 tests
 npm run typecheck  # tsc --noEmit
 npm run build      # bundle main, preload, renderer
-npm run icon       # regenerate the app icon from assets/logo.svg
+npm run icon       # rebuild the icon set from assets/wordmark.svg
+npm run release:mac  # signed and notarised, needs the certificate and the edith-notary profile
 ```
 
 Tests cover path classification, fork resolution, malformed-line tolerance, vault merge semantics, config-write safety, a live MCP client over HTTP, and the full pipeline end to end with the API call mocked.
