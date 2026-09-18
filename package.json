@@ -40,7 +40,7 @@
   "build": {
     "appId": "com.rchari.edith",
     "productName": "Edith",
-    "copyright": "Copyright © 2026 Raghav Chari and Kate Bonner",
+    "copyright": "Copyright \u00a9 2026 Raghav Chari and Kate Bonner",
     "files": [
       "out/**/*",
       "assets/icon.png",
@@ -66,5 +66,8 @@
   },
   "engines": {
     "node": ">=22.12"
+  },
+  "overrides": {
+    "node-gyp": "^11.0.0"
   }
 }
