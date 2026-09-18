@@ -14,7 +14,9 @@ jobs:
   # Does the core actually run on Windows? Nothing ships from this job; it is
   # here to find out what breaks before anyone promises a Windows build.
   windows-probe:
-    runs-on: windows-latest
+    # windows-latest is Server 2025, which ships no Visual Studio; 2022 has the
+    # build tools the native module's compile step needs.
+    runs-on: windows-2022
     timeout-minutes: 25
     continue-on-error: true
     steps:
