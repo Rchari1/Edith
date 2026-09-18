@@ -11,6 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Does the core actually run on Windows? Nothing ships from this job; it is
+  # here to find out what breaks before anyone promises a Windows build.
+  windows-probe:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build native modules for Electron
+        run: npx electron-builder install-app-deps
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   check:
     # Edith ships for macOS, and parts of the core read macOS paths, so the
     # checks run on the platform it is built for.
